@@ -296,6 +296,24 @@ const DEFAULT_KATEGORI = [
 
 let S=JSON.parse(localStorage.getItem('set')||'{"nama":"Riyadh Meubel","alamat":"","telp":"","slogan":"Premium Furniture","logo":"https://raw.githubusercontent.com/Hadvhy/Riyadh-Meubel-POS/main/logo%20riyadh.jpeg","url":"","kategoriTambahan":[]}');
 let DB=JSON.parse(localStorage.getItem('db')||'null')||{Produk:[],Penjualan:[],Pembelian:[],Pengeluaran:[]};
+function normItems(v){
+  if(Array.isArray(v)) return v;
+  if(typeof v==='string'){ try{ const p=JSON.parse(v); if(Array.isArray(p)) return p; }catch(e){} }
+  return [];
+}
+function normTgl(v){
+  if(typeof v==='string' && /^\d{4}-\d{2}-\d{2}T/.test(v)){
+    const d=new Date(v);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  return v;
+}
+function normDB(){
+  ['Produk','Penjualan','Pembelian','Pengeluaran'].forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; });
+  ['Penjualan','Pembelian'].forEach(k=>{ DB[k]=DB[k].map(x=>({...x,items:normItems(x.items),tgl:normTgl(x.tgl)})); });
+  DB.Pengeluaran=DB.Pengeluaran.map(x=>({...x,tgl:normTgl(x.tgl)}));
+}
+normDB();
 const DEFAULT_USERS = [
   {id:'1',username:'pemilik',password:'pemilik',nama:'Pemilik',role:'pemilik'},
   {id:'2',username:'kasir',password:'kasir',nama:'Kasir',role:'kasir'},
@@ -339,7 +357,6 @@ async function syncUsers(){
   try{
     await fetch(S.url, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({sheet:'Users', rows: USERS})
     });
     toast('User tersimpan ke Spreadsheet');
@@ -357,12 +374,16 @@ function getAllKategori(){
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';clearTimeout(window._t);window._t=setTimeout(()=>t.style.display='none',2400)}
 
-async function sync(sh){saveDB();if(!S.url)return;try{await fetch(S.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sheet:sh,rows:DB[sh]})});toast('Tersimpan ke Spreadsheet')}catch(e){toast('Gagal sinkron, data aman di perangkat')}}
+async function sync(sh){saveDB();if(!S.url)return;try{
+  const rows=(DB[sh]||[]).map(r=>Array.isArray(r.items)?{...r,items:JSON.stringify(r.items)}:r);
+  await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:sh,rows})});
+  toast('Tersimpan ke Spreadsheet')}catch(e){toast('Gagal sinkron, data aman di perangkat')}}
 async function pull(){
   if(!S.url) return toast('Isi URL di Pengaturan');
   try{
     const r = await (await fetch(S.url)).json();
-    Object.keys(DB).forEach(k=>{ if(r[k]) DB[k]=r[k]; });
+    Object.keys(DB).forEach(k=>{ if(Array.isArray(r[k])) DB[k]=r[k]; });
+    normDB();
     saveDB();
     // Ambil user juga
     if(r.Users && Array.isArray(r.Users)){
