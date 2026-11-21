@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Riyadh Meubel POS</title>
+<script src="config.js" onerror="void 0"></script>
 <style>
 :root{--navy:#c1121f;--navy2:#e63946;--wood:#986b46;--gold:#d5ad72;--cream:#f6f2eb;--paper:#fffdf9;--ink:#263238;--muted:#879096;--line:#e9e3da;--green:#32856c;--red:#c75c50;--shadow:0 12px 35px #182b3510}
 *{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -234,11 +235,6 @@ window.doLogin = function(){
         <a href="#" onclick="alert('Hubungi pemilik untuk reset password');return false">Lupa Password?</a>
       </div>
       <button class="login-btn" id="btnLogin" type="button" onclick="window.doLogin && window.doLogin()">Masuk</button>
-      <div class="login-footer">
-        Akun default: <strong>pemilik / pemilik</strong><br>
-        <small>kasir / kasir · gudang / gudang</small><br>
-        <button type="button" onclick="resetUsers()" style="margin-top:10px;background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font-size:12px;color:#6b7280;cursor:pointer">Reset Akun Default</button>
-      </div>
     </div>
   </div>
 </div>
@@ -295,7 +291,9 @@ const DEFAULT_KATEGORI = [
   "Aksesoris","Lain-lain"
 ];
 
+const CFG=Object.assign({SCRIPT_URL:'https://script.google.com/macros/s/AKfycbzHmofSPCsXWMi3Sq7ZpsVB8dscjM_ZGhSYCldNd9W4jSSLBqkzS5zI7MVYITZKTvUkZA/exec'},window.APP_CONFIG||{});
 let S=JSON.parse(localStorage.getItem('set')||'{"nama":"Riyadh Meubel","alamat":"","telp":"","slogan":"Premium Furniture","logo":"https://raw.githubusercontent.com/Hadvhy/Riyadh-Meubel-POS/main/logo%20riyadh.jpeg","url":"","kategoriTambahan":[]}');
+if(CFG.SCRIPT_URL)S.url=CFG.SCRIPT_URL;
 let DB=JSON.parse(localStorage.getItem('db')||'null')||{Produk:[],Penjualan:[],Pembelian:[],Pengeluaran:[]};
 function normItems(v){
   if(Array.isArray(v)) return v;
@@ -352,18 +350,17 @@ function getAllowedMenu(){
 }
 
 function saveUsers(){localStorage.setItem('users',JSON.stringify(USERS))}
-async function syncUsers(){
+const isDirty=k=>localStorage.getItem('dirty_'+k)==='1';
+const setDirty=(k,v)=>{try{v?localStorage.setItem('dirty_'+k,'1'):localStorage.removeItem('dirty_'+k)}catch(e){}};
+async function syncUsers(force){
   saveUsers();
   if(!S.url) return;
+  setDirty('Users',true);
   try{
-    await fetch(S.url, {
-      method: 'POST',
-      body: JSON.stringify({sheet:'Users', rows: USERS})
-    });
-    toast('User tersimpan ke Spreadsheet');
-  }catch(e){
-    toast('Gagal sync user, tersimpan lokal');
-  }
+    const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:'Users',rows:USERS,force:force===true})})).json();
+    if(j.status==='ok'){setDirty('Users',false);localStorage.setItem('usersSynced','1');toast('User tersimpan ke Spreadsheet')}
+    else toast('Sinkron user ditolak: '+(j.message||'periksa spreadsheet'));
+  }catch(e){toast('Gagal sync user, tersimpan lokal')}
 }
 function saveDB(){localStorage.setItem('db',JSON.stringify(DB))}
 function saveS(){localStorage.setItem('set',JSON.stringify(S));updateBrand()}
@@ -375,27 +372,48 @@ function getAllKategori(){
 
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';clearTimeout(window._t);window._t=setTimeout(()=>t.style.display='none',2400)}
 
-async function sync(sh){saveDB();if(!S.url)return;try{
-  const rows=(DB[sh]||[]).map(r=>Array.isArray(r.items)?{...r,items:JSON.stringify(r.items)}:r);
-  await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:sh,rows})});
-  toast('Tersimpan ke Spreadsheet')}catch(e){toast('Gagal sinkron, data aman di perangkat')}}
-async function pull(){
-  if(!S.url) return toast('Isi URL di Pengaturan');
+async function sync(sh,force){
+  saveDB();if(!S.url)return;
+  setDirty(sh,true);
   try{
-    const r = await (await fetch(S.url)).json();
-    Object.keys(DB).forEach(k=>{ if(Array.isArray(r[k])) DB[k]=r[k]; });
-    normDB();
-    saveDB();
-    // Ambil user juga
-    if(r.Users && Array.isArray(r.Users)){
-      USERS = r.Users;
-      localStorage.setItem('users', JSON.stringify(USERS));
-    }
-    toast('Data diambil dari Spreadsheet');
-    if(cur) go(cur);
-  }catch(e){ toast('Gagal mengambil data'); }
+    const rows=(DB[sh]||[]).map(r=>Array.isArray(r.items)?{...r,items:JSON.stringify(r.items)}:r);
+    const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:sh,rows,force:force===true})})).json();
+    if(j.status==='ok'){setDirty(sh,false);toast('Tersimpan ke Spreadsheet')}
+    else toast('Ditolak: data lokal tampak lebih sedikit dari spreadsheet. Tekan "Ambil data dari Spreadsheet".');
+  }catch(e){toast('Gagal sinkron, data aman di perangkat')}
 }
-
+async function pull(silent){
+  if(!S.url){ if(!silent) toast('Isi URL di Pengaturan'); return; }
+  try{
+    const r=await (await fetch(S.url)).json();
+    Object.keys(DB).forEach(k=>{
+      if(!Array.isArray(r[k])) return;
+      if(silent && isDirty(k)) return;               // ada perubahan lokal yang belum terkirim
+      if(r[k].length===0 && DB[k].length>0){ sync(k); return; } // sheet kosong, lokal ada isi: jangan dihapus
+      DB[k]=r[k]; setDirty(k,false);
+    });
+    normDB(); saveDB();
+    if(Array.isArray(r.Users) && r.Users.length && !(silent && isDirty('Users'))){
+      USERS=r.Users.map(normUser); saveUsers(); localStorage.setItem('usersSynced','1');
+    }
+    if(!silent) toast('Data diambil dari Spreadsheet');
+    if(cur && window.CURRENT) go(cur);
+  }catch(e){ if(!silent) toast('Gagal mengambil data'); }
+}
+const normUser=u=>({...u,id:String(u.id),username:String(u.username),password:String(u.password),nama:String(u.nama||u.username),role:String(u.role||'kasir')});
+async function refreshUsers(){
+  if(!S.url) return false;
+  if(isDirty('Users')) return false;
+  try{
+    const c=new AbortController(), t=setTimeout(()=>c.abort(),8000);
+    const r=await (await fetch(S.url+'?sheet=Users',{signal:c.signal})).json();
+    clearTimeout(t);
+    if(Array.isArray(r.Users) && r.Users.length){
+      USERS=r.Users.map(normUser); saveUsers(); localStorage.setItem('usersSynced','1'); return true;
+    }
+    return 'empty';
+  }catch(e){ return false; }
+}
 function updateBrand(){
   const logo=S.logo?'<img src="'+S.logo+'" alt="">':'⌂';
   document.getElementById('brandArea').innerHTML='<div class="brand-mark">'+logo+'</div><div><strong>'+E(S.nama||'RIYADH MEUBEL')+'</strong><small>'+E(S.slogan||'FURNITURE STORE')+'</small></div>';
@@ -522,15 +540,15 @@ P.lap=()=>{
 };
 function reprint(id){lastReceipt=DB.Penjualan.find(x=>x.id===id);if(lastReceipt)printReceipt()}
 
-P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><input id="su" placeholder="URL Web App Google Apps Script (opsional)" value="'+E(S.url)+'"></div><div class="row"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button><button class="btn o" onclick="pull()">Ambil data dari Spreadsheet</button><button class="btn o" onclick="Object.keys(DB).forEach(k=>sync(k));syncUsers()">Kirim semua data</button></div><p style="color:var(--muted);font-size:12px;margin-top:10px">Tanpa URL, data hanya tersimpan di browser ini. Logo disimpan secara lokal (base64) atau URL.</p></div>';
+P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><input id="su" placeholder="URL Web App Google Apps Script (opsional)" value="'+E(S.url)+'"'+(CFG.SCRIPT_URL?' readonly title="Diatur di config.js"':'')+'></div><div class="row"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button><button class="btn o" onclick="pull()">Ambil data dari Spreadsheet</button><button class="btn o" onclick="Object.keys(DB).forEach(k=>sync(k));syncUsers()">Kirim semua data</button></div><p style="color:var(--muted);font-size:12px;margin-top:10px">Tanpa URL, data hanya tersimpan di browser ini. Logo disimpan secara lokal (base64) atau URL.</p></div>';
 function uploadLogo(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.logo=r.result;saveS();go('set');toast('Logo diunggah')};r.readAsDataURL(f)}
-function simpanSet(){S.nama=document.getElementById('sn').value.trim()||'Riyadh Meubel';S.alamat=document.getElementById('sa').value.trim();S.telp=document.getElementById('st').value.trim();S.slogan=document.getElementById('ss').value.trim();S.url=document.getElementById('su').value.trim();saveS();toast('Pengaturan tersimpan');if(S.url)pull()}
+function simpanSet(){S.nama=document.getElementById('sn').value.trim()||'Riyadh Meubel';S.alamat=document.getElementById('sa').value.trim();S.telp=document.getElementById('st').value.trim();S.slogan=document.getElementById('ss').value.trim();S.url=CFG.SCRIPT_URL||document.getElementById('su').value.trim();saveS();toast('Pengaturan tersimpan');if(S.url)pull()}
 
 P.users=()=>{
   return '<div class="card"><h3>Tambah Pengguna</h3><div class="row"><input id="uu" placeholder="Username"><input id="up" type="password" placeholder="Password"><input id="un" placeholder="Nama"><select id="ur"><option value="kasir">Kasir</option><option value="gudang">Gudang</option><option value="pemilik">Pemilik</option></select></div><button class="btn" onclick="addUser()">Tambah Pengguna</button></div>'+
   '<div class="card"><h3>Daftar Pengguna</h3><div class="table-wrap"><table><tr><th>Username<th>Nama<th>Role<th></tr>'+
   USERS.map(u=>'<tr><td>'+E(u.username)+'<td>'+E(u.nama)+'<td>'+u.role+'<td>'+(u.username!=='pemilik'?'<button class="btn x" onclick="delUser(\''+u.id+'\')">Hapus</button>':'')+'</tr>').join('')+
-  '</table></div></div>';
+  '</table></div><div class="row" style="margin-top:12px"><button class="btn o" onclick="resetUsers()">Reset Akun Default</button></div></div>';
 };
 function addUser(){
   const u=document.getElementById('uu').value.trim();
@@ -553,51 +571,46 @@ function delUser(id){
 }
 
 function resetUsers(){
-  if(confirm('Reset semua akun ke default?')){
-    localStorage.removeItem('users');
-    location.reload();
+  if(!window.CURRENT||window.CURRENT.role!=='pemilik') return alert('Hanya pemilik');
+  if(confirm('Reset semua akun ke default (pemilik/kasir/gudang)? Password lama dihapus di semua perangkat.')){
+    USERS=DEFAULT_USERS.slice(); saveUsers(); syncUsers(true); go('users');
   }
 }
-function doLogin(){
-  const u = (document.getElementById('loginUser').value || '').trim().toLowerCase();
-  const p = document.getElementById('loginPass').value || '';
-  const err = document.getElementById('loginError');
-
-  // Hardcoded fallback - always works
-  const hardUsers = [
-    {username:'pemilik', password:'pemilik', nama:'Pemilik', role:'pemilik'},
-    {username:'kasir', password:'kasir', nama:'Kasir', role:'kasir'},
-    {username:'gudang', password:'gudang', nama:'Gudang', role:'gudang'}
-  ];
-
-  let user = hardUsers.find(x => x.username === u && x.password === p);
-
-  if(!user && Array.isArray(USERS)){
-    user = USERS.find(x => x.username && x.username.toLowerCase() === u && x.password === p);
-  }
-
-  if(!user){
-    err.textContent = 'Username atau password salah';
-    err.style.display = 'block';
+async function doLogin(){
+  if(window._loggingIn) return;
+  const u=(document.getElementById('loginUser').value||'').trim().toLowerCase();
+  const p=document.getElementById('loginPass').value||'';
+  const err=document.getElementById('loginError');
+  const btn=document.getElementById('btnLogin');
+  err.style.display='none';
+  window._loggingIn=true;
+  if(btn){btn.disabled=true;btn.textContent='Memeriksa...'}
+  const state=await refreshUsers();           // true | 'empty' | false (offline / belum diatur)
+  if(btn){btn.disabled=false;btn.textContent='Masuk'}
+  window._loggingIn=false;
+  const found=USERS.find(x=>x.username&&x.username.toLowerCase()===u&&x.password===p);
+  if(!found){
+    err.textContent=(state===false&&S.url)?'Username atau password salah (mode offline: memakai data tersimpan di perangkat)':'Username atau password salah';
+    err.style.display='block';
     return;
   }
-
-  err.style.display = 'none';
-  CURRENT = user;
-  try { sessionStorage.setItem('currentUser', JSON.stringify(user)); } catch(e){}
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'grid';
-  buildNav();
-  updateBrand();
-  const first = getAllowedMenu()[0]?.id || 'kasir';
-  go(first);
-  toast('Selamat datang, ' + user.nama);
+  const {password:_pw,...user}=found;
+  CURRENT=user;
+  try{ sessionStorage.setItem('currentUser',JSON.stringify(user)); }catch(e){}
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').style.display='grid';
+  buildNav(); updateBrand();
+  go(getAllowedMenu()[0]?.id||'kasir');
+  toast('Selamat datang, '+user.nama);
+  if(S.url){
+    if(state==='empty') syncUsers();                       // sheet Users masih kosong: isi dengan akun ini
+    Object.keys(DB).filter(isDirty).forEach(k=>sync(k));   // kirim dulu perubahan yang tertunda
+    pull(true);                                            // lalu ambil data terbaru
+  }
 }
 
-// Attach login button event
 document.addEventListener('DOMContentLoaded', function(){
   const btn = document.getElementById('btnLogin');
-  if(btn) btn.addEventListener('click', doLogin);
   const pass = document.getElementById('loginPass');
   if(pass) pass.addEventListener('keypress', function(e){ if(e.key==='Enter') doLogin(); });
 });
@@ -610,6 +623,59 @@ function logout(){
   document.getElementById('loginPass').value='';
   document.getElementById('loginError').style.display='none';
 }
+
+
+// ===== Backup & Restore =====
+const daysSinceBackup=()=>{const t=localStorage.getItem('lastBackup');return t?Math.floor((Date.now()-new Date(t))/864e5):null};
+function markBackup(){try{localStorage.setItem('lastBackup',new Date().toISOString())}catch(e){}}
+function downloadBackup(){
+  const payload={app:'riyadh-meubel-pos',version:1,tanggal:new Date().toISOString(),DB:DB,Users:USERS,Settings:{...S,url:''}};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='backup-riyadh-meubel-'+today()+'.json';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  markBackup();toast('Backup diunduh');if(cur==='set'||cur==='dash')go(cur);
+}
+function restoreBackup(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const d=JSON.parse(r.result);
+      if(d.app!=='riyadh-meubel-pos'||!d.DB||typeof d.DB!=='object') throw new Error('format');
+      const ringkas=['Produk','Penjualan','Pembelian','Pengeluaran'].map(k=>k+': '+((d.DB[k]||[]).length)).join('\n');
+      if(!confirm('Pulihkan backup tanggal '+String(d.tanggal||'').slice(0,10)+'?\n\n'+ringkas+'\n\nData saat ini akan DIGANTI (salinan sebelumnya disimpan sementara di perangkat).')){input.value='';return}
+      try{localStorage.setItem('db_prev',JSON.stringify(DB))}catch(e){}
+      DB=d.DB;normDB();saveDB();
+      if(Array.isArray(d.Users)&&d.Users.length){USERS=d.Users.map(normUser);saveUsers()}
+      if(S.url){['Produk','Penjualan','Pembelian','Pengeluaran'].forEach(k=>sync(k,true));syncUsers(true)}
+      toast('Backup dipulihkan');go('set');
+    }catch(e){alert('File backup tidak valid')}
+  };
+  r.readAsText(f);
+}
+async function driveBackup(){
+  if(!S.url) return toast('URL spreadsheet belum diatur');
+  toast('Membuat backup di Google Drive...');
+  try{
+    const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({action:'backup'})})).json();
+    if(j.status==='ok'){markBackup();toast('Backup Drive: '+j.file);if(cur==='set')go('set')}
+    else toast('Gagal backup: '+(j.message||''));
+  }catch(e){toast('Gagal menghubungi server')}
+}
+const backupCard=()=>{
+  const d=daysSinceBackup();
+  const info=d===null?'Belum pernah backup dari perangkat ini.':(d===0?'Backup terakhir: hari ini.':'Backup terakhir: '+d+' hari lalu.');
+  return '<div class="card" style="margin-top:16px"><h3>Backup &amp; Restore</h3><p style="color:var(--muted);font-size:12px;margin:0 0 10px">'+info+' Spreadsheet juga disalin otomatis ke Google Drive setiap malam (jika trigger harian sudah dipasang).</p>'+
+  '<div class="row"><button class="btn" onclick="downloadBackup()">Unduh Backup (.json)</button><button class="btn o" onclick="driveBackup()">Backup ke Google Drive sekarang</button></div>'+
+  '<div style="margin-top:12px"><label style="font-size:11px;color:var(--muted)">PULIHKAN DARI FILE BACKUP</label><br><input type="file" accept=".json,application/json" style="margin-top:6px;font-size:12px" onchange="restoreBackup(this)"></div></div>';
+};
+const backupBanner=()=>{
+  if(!window.CURRENT||window.CURRENT.role!=='pemilik') return '';
+  const d=daysSinceBackup();
+  if(d!==null&&d<7) return '';
+  return '<div class="card" style="border-color:#e8b4b8;background:#fff5f5;margin-bottom:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><strong>⚠ '+(d===null?'Belum pernah backup.':'Sudah '+d+' hari belum backup.')+'</strong> Unduh salinan data agar aman.</span><button class="btn" onclick="downloadBackup()">Backup sekarang</button></div>';
+};
+{const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+backupCard();P.dash=()=>backupBanner()+_dash0();}
 
 // Init
 document.getElementById('todayChip').textContent='◷ '+new Date().toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
