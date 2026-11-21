@@ -25,6 +25,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .nav .ico{width:22px;text-align:center;font-size:18px}
 .side-bottom{margin-top:auto;background:#ffffff1a;border:1px solid #ffffff2e;border-radius:13px;padding:14px;color:#fff;font-weight:600}
 .side-bottom small{color:#ffe3c2;font-weight:500;font-size:12px}
+.btn-logout{width:100%;margin-top:12px;padding:11px 14px;border-radius:10px;background:#fff;color:#9e1b25;font-size:14px;font-weight:800;letter-spacing:.3px;border:2px solid #fff;box-shadow:0 4px 12px #00000030;transition:background .15s,transform .1s}
+.btn-logout:hover{background:#ffe3c2;border-color:#ffe3c2}
+.btn-logout:active{transform:scale(.98)}
 .main{min-width:0;padding:27px 30px 35px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:25px}
 .eyebrow{color:var(--wood);font-size:10px;letter-spacing:2px;font-weight:700}
@@ -251,7 +254,7 @@ window.doLogin = function(){
     <div style="font-weight:650;margin-bottom:4px" id="sideName">RIYADH MEUBEL</div>
     <small id="sideTag">Premium furniture POS</small>
     <div style="margin-top:12px;font-size:10px;color:#8f9da1">Versi 2.2</div>
-    <button class="btn o" style="width:100%;margin-top:10px;font-size:12px" onclick="logout()">Keluar</button>
+    <button class="btn-logout" onclick="logout()">⎋ Keluar</button>
   </div>
 </aside>
 <main class="main">
