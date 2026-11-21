@@ -1,0 +1,11 @@
+{
+  "name": "mebel-pos",
+  "version": "2.0.0",
+  "description": "Mebel POS Premium - Single file POS with Google Sheets sync",
+  "main": "index.html",
+  "scripts": {
+    "start": "echo 'Buka index.html di browser'"
+  },
+  "keywords": ["pos", "mebel", "furniture", "kasir"],
+  "license": "MIT"
+}
