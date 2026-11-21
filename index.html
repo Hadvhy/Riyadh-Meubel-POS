@@ -180,25 +180,22 @@ window.doLogin = function(){
     if(err) err.style.display = 'none';
     window.CURRENT = user;
     try { sessionStorage.setItem('currentUser', JSON.stringify(user)); } catch(e){}
-    var ls = document.getElementById('loginScreen');
-    var app = document.getElementById('app');
-    if(ls) ls.style.display = 'none';
-    if(app) app.style.display = 'grid';
-    if(typeof buildNav === 'function') buildNav();
-    if(typeof updateBrand === 'function') updateBrand();
-    if(typeof go === 'function'){
-      var first = 'kasir';
-      if(typeof getAllowedMenu === 'function'){
-        var m = getAllowedMenu();
-        if(m && m[0]) first = m[0].id;
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'grid';
+    // Delay a bit so main script functions are ready
+    setTimeout(function(){
+      if(typeof buildNav === 'function') buildNav();
+      if(typeof updateBrand === 'function') updateBrand();
+      if(typeof go === 'function'){
+        var first = 'dash';
+        if(typeof getAllowedMenu === 'function'){
+          var m = getAllowedMenu();
+          if(m && m.length) first = m[0].id;
+        }
+        go(first);
       }
-      go(first);
-    }
-    if(typeof toast === 'function') toast('Selamat datang, ' + user.nama);
-    // Force set global CURRENT for the main script
-    if(typeof window.CURRENT === 'undefined' || !window.CURRENT){
-      window.CURRENT = user;
-    }
+      if(typeof toast === 'function') toast('Selamat datang, ' + user.nama);
+    }, 50);
   } catch(e) {
     alert('Login error: ' + e.message);
   }
@@ -285,7 +282,7 @@ const $=s=>document.querySelector(s);
 const R=n=>'Rp '+Math.round(+n||0).toLocaleString('id-ID');
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const today=()=>new Date().toISOString().slice(0,10);
-const E=s=>String(s??"").replace(/[&<>"']/g,c=>({38:"&",60:"<",62:">",34:""",39:"&#39;"}[c.charCodeAt(0)]||c));
+const E=function(s){s=String(s==null?"":s);var amp=String.fromCharCode(38)+"amp;",lt=String.fromCharCode(38)+"lt;",gt=String.fromCharCode(38)+"gt;",quot=String.fromCharCode(38)+"quot;",apos=String.fromCharCode(38)+"#39;";return s.replace(/&/g,amp).replace(/</g,lt).replace(/>/g,gt).replace(/"/g,quot).replace(/'/g,apos);};
 const sum=(a,f)=>a.reduce((x,y)=>x+f(y),0);
 
 const DEFAULT_KATEGORI = [
@@ -594,7 +591,7 @@ function logout(){
 
 // Init
 document.getElementById('todayChip').textContent='◷ '+new Date().toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
-if(CURRENT){
+if(window.CURRENT){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='grid';
   buildNav();
