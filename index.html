@@ -170,23 +170,10 @@ th{color:var(--muted);font-weight:500;font-size:12px}
           <span>Premium Furniture POS</span>
         </div>
       </div>
-      <div class="phone-wrap">
-        <div class="phone">
-          <div class="phone-screen">
-            <div class="phone-header">
-              <span>Riyadh Meubel</span>
-              <span>9:41</span>
-            </div>
-            <div class="phone-body">
-              <div style="text-align:center;font-weight:700;margin:8px 0">Transaksi Hari Ini</div>
-              <div class="phone-item"><span>Meja Makan</span><strong>Rp 2.450.000</strong></div>
-              <div class="phone-item"><span>Sofa 3 Seater</span><strong>Rp 5.800.000</strong></div>
-              <div class="phone-item"><span>Lemari Pakaian</span><strong>Rp 3.200.000</strong></div>
-              <div class="phone-item"><span>Kasur Queen</span><strong>Rp 1.950.000</strong></div>
-              <div style="text-align:center;margin-top:12px;color:#e63946;font-weight:700">Total: Rp 13.400.000</div>
-            </div>
-          </div>
-        </div>
+      <div class="logo-big-wrap" style="display:flex;justify-content:center;align-items:center;flex:1;z-index:1;">
+        <img src="https://raw.githubusercontent.com/Hadvhy/Riyadh-Meubel-POS/main/logo%20riyadh.jpeg" 
+             alt="Logo Riyadh Meubel" 
+             style="width:220px;height:220px;border-radius:24px;object-fit:cover;background:#fff;box-shadow:0 12px 30px rgba(0,0,0,.3);">
       </div>
       <div class="promo">
         <h1>Sistem POS<br>Mebel Premium</h1>
@@ -215,7 +202,8 @@ th{color:var(--muted);font-weight:500;font-size:12px}
       <button class="login-btn" onclick="doLogin()">Masuk</button>
       <div class="login-footer">
         Akun default: <strong>pemilik / pemilik</strong><br>
-        <small>kasir / kasir · gudang / gudang</small>
+        <small>kasir / kasir · gudang / gudang</small><br>
+        <button type="button" onclick="resetUsers()" style="margin-top:10px;background:none;border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font-size:12px;color:#6b7280;cursor:pointer">Reset Akun Default</button>
       </div>
     </div>
   </div>
@@ -275,11 +263,16 @@ const DEFAULT_KATEGORI = [
 
 let S=JSON.parse(localStorage.getItem('set')||'{"nama":"Riyadh Meubel","alamat":"","telp":"","slogan":"Premium Furniture","logo":"https://raw.githubusercontent.com/Hadvhy/Riyadh-Meubel-POS/main/logo%20riyadh.jpeg","url":"","kategoriTambahan":[]}');
 let DB=JSON.parse(localStorage.getItem('db')||'null')||{Produk:[],Penjualan:[],Pembelian:[],Pengeluaran:[]};
-let USERS=JSON.parse(localStorage.getItem('users')||'null')||[
+const DEFAULT_USERS = [
   {id:'1',username:'pemilik',password:'pemilik',nama:'Pemilik',role:'pemilik'},
   {id:'2',username:'kasir',password:'kasir',nama:'Kasir',role:'kasir'},
   {id:'3',username:'gudang',password:'gudang',nama:'Gudang',role:'gudang'}
 ];
+let USERS = JSON.parse(localStorage.getItem('users')||'null');
+if(!Array.isArray(USERS) || USERS.length===0){
+  USERS = DEFAULT_USERS;
+  localStorage.setItem('users', JSON.stringify(USERS));
+}
 let CURRENT=JSON.parse(sessionStorage.getItem('currentUser')||'null');
 
 let C=[],K={pelanggan:'',diskon:0,metode:'Tunai',bayar:0};
@@ -473,25 +466,42 @@ function delUser(id){
   }
 }
 
-function doLogin(){
-  const u=document.getElementById('loginUser').value.trim();
-  const p=document.getElementById('loginPass').value;
-  const err=document.getElementById('loginError');
-  const user=USERS.find(x=>x.username===u && x.password===p);
-  if(!user){
-    err.style.display='block';
-    return;
+function resetUsers(){
+  if(confirm('Reset semua akun ke default?')){
+    localStorage.removeItem('users');
+    location.reload();
   }
-  err.style.display='none';
-  CURRENT=user;
-  sessionStorage.setItem('currentUser',JSON.stringify(user));
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('app').style.display='grid';
-  buildNav();
-  updateBrand();
-  const first=getAllowedMenu()[0]?.id||'kasir';
-  go(first);
-  toast('Selamat datang, '+user.nama);
+}
+function doLogin(){
+  try{
+    const u=document.getElementById('loginUser').value.trim();
+    const p=document.getElementById('loginPass').value;
+    const err=document.getElementById('loginError');
+    if(!u || !p){
+      err.textContent='Isi username dan password';
+      err.style.display='block';
+      return;
+    }
+    const user=USERS.find(x=>x.username.toLowerCase()===u.toLowerCase() && x.password===p);
+    if(!user){
+      err.textContent='Username atau password salah';
+      err.style.display='block';
+      return;
+    }
+    err.style.display='none';
+    CURRENT=user;
+    sessionStorage.setItem('currentUser',JSON.stringify(user));
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('app').style.display='grid';
+    buildNav();
+    updateBrand();
+    const first=getAllowedMenu()[0]?.id||'kasir';
+    go(first);
+    toast('Selamat datang, '+user.nama);
+  }catch(e){
+    console.error(e);
+    alert('Error login: '+e.message);
+  }
 }
 function logout(){
   CURRENT=null;
