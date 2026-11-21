@@ -268,9 +268,12 @@ const DEFAULT_USERS = [
   {id:'2',username:'kasir',password:'kasir',nama:'Kasir',role:'kasir'},
   {id:'3',username:'gudang',password:'gudang',nama:'Gudang',role:'gudang'}
 ];
-let USERS = JSON.parse(localStorage.getItem('users')||'null');
-if(!Array.isArray(USERS) || USERS.length===0){
-  USERS = DEFAULT_USERS;
+let USERS = DEFAULT_USERS.slice();
+try {
+  const saved = JSON.parse(localStorage.getItem('users')||'null');
+  if(Array.isArray(saved) && saved.length > 0) USERS = saved;
+  else localStorage.setItem('users', JSON.stringify(USERS));
+} catch(e) {
   localStorage.setItem('users', JSON.stringify(USERS));
 }
 let CURRENT=JSON.parse(sessionStorage.getItem('currentUser')||'null');
@@ -297,6 +300,20 @@ function getAllowedMenu(){
 }
 
 function saveUsers(){localStorage.setItem('users',JSON.stringify(USERS))}
+async function syncUsers(){
+  saveUsers();
+  if(!S.url) return;
+  try{
+    await fetch(S.url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({sheet:'Users', rows: USERS})
+    });
+    toast('User tersimpan ke Spreadsheet');
+  }catch(e){
+    toast('Gagal sync user, tersimpan lokal');
+  }
+}
 function saveDB(){localStorage.setItem('db',JSON.stringify(DB))}
 function saveS(){localStorage.setItem('set',JSON.stringify(S));updateBrand()}
 
@@ -308,7 +325,21 @@ function getAllKategori(){
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';clearTimeout(window._t);window._t=setTimeout(()=>t.style.display='none',2400)}
 
 async function sync(sh){saveDB();if(!S.url)return;try{await fetch(S.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sheet:sh,rows:DB[sh]})});toast('Tersimpan ke Spreadsheet')}catch(e){toast('Gagal sinkron, data aman di perangkat')}}
-async function pull(){if(!S.url)return toast('Isi URL di Pengaturan');try{const r=await(await fetch(S.url)).json();Object.keys(DB).forEach(k=>{if(r[k])DB[k]=r[k]});saveDB();toast('Data diambil dari Spreadsheet');go(cur)}catch(e){toast('Gagal mengambil data')}}
+async function pull(){
+  if(!S.url) return toast('Isi URL di Pengaturan');
+  try{
+    const r = await (await fetch(S.url)).json();
+    Object.keys(DB).forEach(k=>{ if(r[k]) DB[k]=r[k]; });
+    saveDB();
+    // Ambil user juga
+    if(r.Users && Array.isArray(r.Users)){
+      USERS = r.Users;
+      localStorage.setItem('users', JSON.stringify(USERS));
+    }
+    toast('Data diambil dari Spreadsheet');
+    if(cur) go(cur);
+  }catch(e){ toast('Gagal mengambil data'); }
+}
 
 function updateBrand(){
   const logo=S.logo?'<img src="'+S.logo+'" alt="">':'⌂';
@@ -436,7 +467,7 @@ P.lap=()=>{
 };
 function reprint(id){lastReceipt=DB.Penjualan.find(x=>x.id===id);if(lastReceipt)printReceipt()}
 
-P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><input id="su" placeholder="URL Web App Google Apps Script (opsional)" value="'+E(S.url)+'"></div><div class="row"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button><button class="btn o" onclick="pull()">Ambil data dari Spreadsheet</button><button class="btn o" onclick="Object.keys(DB).forEach(k=>sync(k))">Kirim semua data</button></div><p style="color:var(--muted);font-size:12px;margin-top:10px">Tanpa URL, data hanya tersimpan di browser ini. Logo disimpan secara lokal (base64) atau URL.</p></div>';
+P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><input id="su" placeholder="URL Web App Google Apps Script (opsional)" value="'+E(S.url)+'"></div><div class="row"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button><button class="btn o" onclick="pull()">Ambil data dari Spreadsheet</button><button class="btn o" onclick="Object.keys(DB).forEach(k=>sync(k));syncUsers()">Kirim semua data</button></div><p style="color:var(--muted);font-size:12px;margin-top:10px">Tanpa URL, data hanya tersimpan di browser ini. Logo disimpan secara lokal (base64) atau URL.</p></div>';
 function uploadLogo(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.logo=r.result;saveS();go('set');toast('Logo diunggah')};r.readAsDataURL(f)}
 function simpanSet(){S.nama=document.getElementById('sn').value.trim()||'Riyadh Meubel';S.alamat=document.getElementById('sa').value.trim();S.telp=document.getElementById('st').value.trim();S.slogan=document.getElementById('ss').value.trim();S.url=document.getElementById('su').value.trim();saveS();toast('Pengaturan tersimpan');if(S.url)pull()}
 
@@ -454,14 +485,14 @@ function addUser(){
   if(!u||!p)return alert('Username dan password wajib');
   if(USERS.find(x=>x.username===u))return alert('Username sudah ada');
   USERS.push({id:uid(),username:u,password:p,nama:n,role:r});
-  saveUsers();
+  syncUsers();
   toast('Pengguna ditambahkan');
   go('users');
 }
 function delUser(id){
   if(confirm('Hapus pengguna ini?')){
     USERS=USERS.filter(x=>x.id!==id);
-    saveUsers();
+    syncUsers();
     go('users');
   }
 }
@@ -474,33 +505,39 @@ function resetUsers(){
 }
 function doLogin(){
   try{
-    const u=document.getElementById('loginUser').value.trim();
-    const p=document.getElementById('loginPass').value;
-    const err=document.getElementById('loginError');
+    const u = (document.getElementById('loginUser').value || '').trim();
+    const p = document.getElementById('loginPass').value || '';
+    const err = document.getElementById('loginError');
     if(!u || !p){
-      err.textContent='Isi username dan password';
-      err.style.display='block';
+      err.textContent = 'Isi username dan password';
+      err.style.display = 'block';
       return;
     }
-    const user=USERS.find(x=>x.username.toLowerCase()===u.toLowerCase() && x.password===p);
+    // Always check against both current USERS and DEFAULT_USERS
+    const allUsers = [...USERS, ...DEFAULT_USERS];
+    const user = allUsers.find(x => 
+      x.username && x.username.toLowerCase() === u.toLowerCase() && 
+      x.password === p
+    );
     if(!user){
-      err.textContent='Username atau password salah';
-      err.style.display='block';
+      err.textContent = 'Username atau password salah';
+      err.style.display = 'block';
       return;
     }
-    err.style.display='none';
-    CURRENT=user;
-    sessionStorage.setItem('currentUser',JSON.stringify(user));
-    document.getElementById('loginScreen').style.display='none';
-    document.getElementById('app').style.display='grid';
+    err.style.display = 'none';
+    CURRENT = user;
+    sessionStorage.setItem('currentUser', JSON.stringify(user));
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'grid';
     buildNav();
     updateBrand();
-    const first=getAllowedMenu()[0]?.id||'kasir';
+    const first = getAllowedMenu()[0]?.id || 'kasir';
     go(first);
-    toast('Selamat datang, '+user.nama);
+    toast('Selamat datang, ' + user.nama);
+    if(S.url) pull(); // ambil data terbaru termasuk user
   }catch(e){
-    console.error(e);
-    alert('Error login: '+e.message);
+    console.error('Login error:', e);
+    alert('Terjadi kesalahan saat login. Coba klik Reset Akun Default.');
   }
 }
 function logout(){
