@@ -159,6 +159,48 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 </style>
 </head>
 <body>
+
+<script>
+// Standalone login - always available
+window.doLogin = function(){
+  try {
+    var u = (document.getElementById('loginUser').value || '').trim().toLowerCase();
+    var p = document.getElementById('loginPass').value || '';
+    var err = document.getElementById('loginError');
+    var hardUsers = [
+      {username:'pemilik', password:'pemilik', nama:'Pemilik', role:'pemilik', id:'1'},
+      {username:'kasir', password:'kasir', nama:'Kasir', role:'kasir', id:'2'},
+      {username:'gudang', password:'gudang', nama:'Gudang', role:'gudang', id:'3'}
+    ];
+    var user = hardUsers.find(function(x){ return x.username === u && x.password === p; });
+    if(!user){
+      if(err){ err.textContent = 'Username atau password salah'; err.style.display = 'block'; }
+      return;
+    }
+    if(err) err.style.display = 'none';
+    window.CURRENT = user;
+    try { sessionStorage.setItem('currentUser', JSON.stringify(user)); } catch(e){}
+    var ls = document.getElementById('loginScreen');
+    var app = document.getElementById('app');
+    if(ls) ls.style.display = 'none';
+    if(app) app.style.display = 'grid';
+    if(typeof buildNav === 'function') buildNav();
+    if(typeof updateBrand === 'function') updateBrand();
+    if(typeof go === 'function'){
+      var first = 'kasir';
+      if(typeof getAllowedMenu === 'function'){
+        var m = getAllowedMenu();
+        if(m && m[0]) first = m[0].id;
+      }
+      go(first);
+    }
+    if(typeof toast === 'function') toast('Selamat datang, ' + user.nama);
+  } catch(e) {
+    alert('Login error: ' + e.message);
+  }
+};
+</script>
+
 <!-- LOGIN SCREEN -->
 <div class="login-screen" id="loginScreen">
   <div class="login-container">
@@ -193,13 +235,13 @@ th{color:var(--muted);font-weight:500;font-size:12px}
       <div class="field">
         <label>Password</label>
         <span class="icon">🔒</span>
-        <input type="password" placeholder="Masukkan password" id="loginPass" autocomplete="current-password" onkeypress="if(event.key==='Enter')doLogin()">
+        <input type="password" placeholder="Masukkan password" id="loginPass" autocomplete="current-password" >
       </div>
       <div class="login-row">
         <label class="remember"><input type="checkbox" id="rememberMe"> Ingat saya</label>
         <a href="#" onclick="alert('Hubungi pemilik untuk reset password');return false">Lupa Password?</a>
       </div>
-      <button class="login-btn" onclick="doLogin()">Masuk</button>
+      <button class="login-btn" id="btnLogin" type="button" onclick="window.doLogin && window.doLogin()">Masuk</button>
       <div class="login-footer">
         Akun default: <strong>pemilik / pemilik</strong><br>
         <small>kasir / kasir · gudang / gudang</small><br>
@@ -504,42 +546,48 @@ function resetUsers(){
   }
 }
 function doLogin(){
-  try{
-    const u = (document.getElementById('loginUser').value || '').trim();
-    const p = document.getElementById('loginPass').value || '';
-    const err = document.getElementById('loginError');
-    if(!u || !p){
-      err.textContent = 'Isi username dan password';
-      err.style.display = 'block';
-      return;
-    }
-    // Always check against both current USERS and DEFAULT_USERS
-    const allUsers = [...USERS, ...DEFAULT_USERS];
-    const user = allUsers.find(x => 
-      x.username && x.username.toLowerCase() === u.toLowerCase() && 
-      x.password === p
-    );
-    if(!user){
-      err.textContent = 'Username atau password salah';
-      err.style.display = 'block';
-      return;
-    }
-    err.style.display = 'none';
-    CURRENT = user;
-    sessionStorage.setItem('currentUser', JSON.stringify(user));
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'grid';
-    buildNav();
-    updateBrand();
-    const first = getAllowedMenu()[0]?.id || 'kasir';
-    go(first);
-    toast('Selamat datang, ' + user.nama);
-    if(S.url) pull(); // ambil data terbaru termasuk user
-  }catch(e){
-    console.error('Login error:', e);
-    alert('Terjadi kesalahan saat login. Coba klik Reset Akun Default.');
+  const u = (document.getElementById('loginUser').value || '').trim().toLowerCase();
+  const p = document.getElementById('loginPass').value || '';
+  const err = document.getElementById('loginError');
+
+  // Hardcoded fallback - always works
+  const hardUsers = [
+    {username:'pemilik', password:'pemilik', nama:'Pemilik', role:'pemilik'},
+    {username:'kasir', password:'kasir', nama:'Kasir', role:'kasir'},
+    {username:'gudang', password:'gudang', nama:'Gudang', role:'gudang'}
+  ];
+
+  let user = hardUsers.find(x => x.username === u && x.password === p);
+
+  if(!user && Array.isArray(USERS)){
+    user = USERS.find(x => x.username && x.username.toLowerCase() === u && x.password === p);
   }
+
+  if(!user){
+    err.textContent = 'Username atau password salah';
+    err.style.display = 'block';
+    return;
+  }
+
+  err.style.display = 'none';
+  CURRENT = user;
+  try { sessionStorage.setItem('currentUser', JSON.stringify(user)); } catch(e){}
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'grid';
+  buildNav();
+  updateBrand();
+  const first = getAllowedMenu()[0]?.id || 'kasir';
+  go(first);
+  toast('Selamat datang, ' + user.nama);
 }
+
+// Attach login button event
+document.addEventListener('DOMContentLoaded', function(){
+  const btn = document.getElementById('btnLogin');
+  if(btn) btn.addEventListener('click', doLogin);
+  const pass = document.getElementById('loginPass');
+  if(pass) pass.addEventListener('keypress', function(e){ if(e.key==='Enter') doLogin(); });
+});
 function logout(){
   CURRENT=null;
   sessionStorage.removeItem('currentUser');
@@ -562,6 +610,8 @@ if(CURRENT){
 } else {
   document.getElementById('loginScreen').style.display='flex';
 }
+
+window.doLogin = doLogin;
 </script>
 </body>
 </html>
