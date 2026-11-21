@@ -3,55 +3,120 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mebel POS Premium</title>
-<link rel="stylesheet" href="css/style.css">
+<title>Login - Riyadh Meubel POS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f6f8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{width:min(960px,100%);background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.08);display:grid;grid-template-columns:1.1fr 1fr;min-height:560px}
+.left{background:linear-gradient(160deg,#e63946 0%,#c1121f 50%,#a4161a 100%);color:#fff;padding:40px 36px;position:relative;display:flex;flex-direction:column;justify-content:space-between}
+.left::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 20% 30%,rgba(255,255,255,.12),transparent 40%),radial-gradient(circle at 80% 70%,rgba(255,255,255,.08),transparent 35%);pointer-events:none}
+.brand-top{display:flex;align-items:center;gap:10px;z-index:1}
+.brand-top img{width:42px;height:42px;border-radius:10px;object-fit:cover;background:#fff}
+.brand-top strong{font-size:18px;letter-spacing:.3px}
+.brand-top span{font-size:11px;opacity:.85;display:block;margin-top:1px}
+.phone-wrap{display:flex;justify-content:center;align-items:center;flex:1;z-index:1;position:relative}
+.phone{width:180px;height:360px;background:#111;border-radius:28px;padding:10px;box-shadow:0 20px 40px rgba(0,0,0,.35);position:relative}
+.phone-screen{background:#fff;height:100%;border-radius:20px;overflow:hidden;color:#333;font-size:11px}
+.phone-header{background:#e63946;color:#fff;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;font-size:10px}
+.phone-body{padding:8px}
+.phone-item{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.phone-item strong{color:#2d6a4f}
+.promo{z-index:1}
+.promo h1{font-size:32px;line-height:1.15;margin-bottom:12px;font-weight:800}
+.promo p{font-size:14px;opacity:.92;line-height:1.5;max-width:320px}
+.badge{display:inline-block;background:#ffd60a;color:#111;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;margin-top:16px}
+.right{padding:48px 40px;display:flex;flex-direction:column;justify-content:center}
+.right h2{font-size:26px;margin-bottom:6px;color:#1d1d1f}
+.right .sub{color:#6b7280;font-size:14px;margin-bottom:28px}
+.field{margin-bottom:16px;position:relative}
+.field label{display:block;font-size:13px;color:#374151;margin-bottom:6px;font-weight:500}
+.field input{width:100%;padding:13px 14px 13px 42px;border:1.5px solid #e5e7eb;border-radius:12px;font-size:14px;outline:none;transition:.2s}
+.field input:focus{border-color:#e63946;box-shadow:0 0 0 3px rgba(230,57,70,.1)}
+.field .icon{position:absolute;left:14px;top:38px;color:#9ca3af;font-size:16px}
+.row{display:flex;justify-content:space-between;align-items:center;margin:8px 0 20px;font-size:13px}
+.row a{color:#e63946;text-decoration:none;font-weight:500}
+.remember{display:flex;align-items:center;gap:6px;color:#4b5563}
+.btn{width:100%;background:#e63946;color:#fff;border:0;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;transition:.2s}
+.btn:hover{background:#c1121f}
+.divider{text-align:center;margin:18px 0;color:#9ca3af;font-size:13px;position:relative}
+.divider::before,.divider::after{content:"";position:absolute;top:50%;width:40%;height:1px;background:#e5e7eb}
+.divider::before{left:0}.divider::after{right:0}
+.footer{margin-top:20px;text-align:center;font-size:13px;color:#6b7280}
+.footer a{color:#e63946;font-weight:600;text-decoration:none}
+@media(max-width:800px){
+  .container{grid-template-columns:1fr}
+  .left{min-height:280px;padding:28px 24px}
+  .promo h1{font-size:26px}
+  .right{padding:32px 24px}
+  .phone{width:140px;height:280px}
+}
+</style>
 </head>
 <body>
-<div class="app">
-<div class="sidebar-overlay" id="overlay" onclick="closeSidebar()"></div><aside class="sidebar" id="sidebar">
-  <div class="brand" id="brandArea"></div>
-  <div>
-    <div class="nav-label">MENU UTAMA</div>
-    <nav class="nav" id="navMain"></nav>
-  </div>
-  <div class="side-bottom">
-    <div style="font-weight:650;margin-bottom:4px" id="sideName">MEBEL POS</div>
-    <small id="sideTag">Premium furniture POS</small>
-    <div style="margin-top:12px;font-size:10px;color:#8f9da1">Versi 2.0 Premium</div>
-  </div>
-</aside>
-<main class="main">
-  <header class="topbar">
-    <div style="display:flex;align-items:center;gap:11px">
-      <button class="hamb" onclick="openSidebar()">☰</button>
+<div class="container">
+  <div class="left">
+    <div class="brand-top">
+      <img src="logo_riyadh.jpeg" alt="Logo Riyadh Meubel">
       <div>
-        <div class="eyebrow" id="eyebrow">MEBEL POS / POINT OF SALE</div>
-        <h1 id="pageTitle">Dashboard</h1>
+        <strong>Riyadh Meubel</strong>
+        <span>Premium Furniture POS</span>
       </div>
     </div>
-    <div class="top-actions">
-      <div class="date-chip" id="todayChip">◷ Hari ini</div>
-      <div class="profile"><div class="avatar" id="topAvatar">A</div><span style="font-size:11px;font-weight:650" id="topName">Admin</span></div>
+    <div class="phone-wrap">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-header">
+            <span>Riyadh Meubel</span>
+            <span>9:41</span>
+          </div>
+          <div class="phone-body">
+            <div style="text-align:center;font-weight:700;margin:8px 0">Transaksi Hari Ini</div>
+            <div class="phone-item"><span>Meja Makan</span><strong>Rp 2.450.000</strong></div>
+            <div class="phone-item"><span>Sofa 3 Seater</span><strong>Rp 5.800.000</strong></div>
+            <div class="phone-item"><span>Lemari Pakaian</span><strong>Rp 3.200.000</strong></div>
+            <div class="phone-item"><span>Kasur Queen</span><strong>Rp 1.950.000</strong></div>
+            <div style="text-align:center;margin-top:12px;color:#e63946;font-weight:700">Total: Rp 13.400.000</div>
+          </div>
+        </div>
+      </div>
     </div>
-  </header>
-  <div id="view"></div>
-</main>
-</div>
-<div class="toast" id="toast"></div>
-<div class="modal" id="modal"><div class="modal-card"><div style="font-size:38px;color:#32856c">✓</div><div class="eyebrow">TRANSAKSI BERHASIL</div><h2>Pembayaran diterima!</h2><p id="receiptText"></p><div class="modal-actions"><button class="secondary" onclick="closeModal()">Tutup</button><button class="primary" onclick="printReceipt()">Cetak Struk</button></div></div></div>
-
-<script src="js/app.js"></script>
-
-<div class="login-overlay" id="loginOverlay" style="display:none">
-  <div class="login-card">
-    <div class="eyebrow">MEBEL POS</div>
-    <h2>Masuk ke Sistem</h2>
-    <input id="loginUser" placeholder="Username" autocomplete="username">
-    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
-    <div class="login-error" id="loginError"></div>
-    <button onclick="doLogin()">Masuk</button>
-    <p style="font-size:11px;color:var(--muted);margin-top:16px">Default: pemilik/pemilik123 · kasir/kasir123 · gudang/gudang123</p>
+    <div class="promo">
+      <h1>Sistem POS<br>Mebel Premium</h1>
+      <p>Kelola penjualan, stok, pembelian, dan laporan toko mebel dengan mudah dan cepat dalam satu aplikasi.</p>
+      <div class="badge">Riyadh Meubel POS</div>
+    </div>
+  </div>
+  <div class="right">
+    <h2>Masuk ke Dashboard</h2>
+    <div class="sub">Silakan login untuk mengakses sistem POS</div>
+    <div class="field">
+      <label>Username</label>
+      <span class="icon">👤</span>
+      <input type="text" placeholder="Masukkan username" id="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <span class="icon">🔒</span>
+      <input type="password" placeholder="Masukkan password" id="password">
+    </div>
+    <div class="row">
+      <label class="remember"><input type="checkbox"> Ingat saya</label>
+      <a href="#">Lupa Password?</a>
+    </div>
+    <button class="btn" onclick="login()">Masuk</button>
+    <div class="footer">
+      Belum punya akun? <a href="#">Hubungi Pemilik</a>
+    </div>
   </div>
 </div>
+<script>
+function login(){
+  const u=document.getElementById('username').value.trim();
+  const p=document.getElementById('password').value;
+  if(!u||!p){alert('Isi username dan password');return;}
+  alert('Login berhasil! (demo)\nUsername: '+u);
+  // Di sini bisa redirect ke halaman POS utama
+}
+</script>
 </body>
 </html>
