@@ -427,6 +427,7 @@ function applySettings(r){
   S.slogan=String(x.slogan||'');
   S.logo=String(x.logo||'');
   try{const kt=JSON.parse(x.kategori||'[]');if(Array.isArray(kt))S.kategoriTambahan=kt}catch(e){}
+  if('pemilik_nama' in x) S.pemilik={nama:String(x.pemilik_nama||''),jabatan:String(x.pemilik_jabatan||''),telp:String(x.pemilik_telp||''),email:String(x.pemilik_email||''),alamat:String(x.pemilik_alamat||'')};
   try{const sj=JSON.parse(x.surat||'{}');if(sj&&typeof sj==='object'&&Object.keys(sj).length)S.surat=sj}catch(e){}
   saveS();
   return true;
@@ -442,9 +443,9 @@ async function syncSettings(silent){
     S.logo=small; saveS();
   }
   try{
-    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[]),surat:JSON.stringify(S.surat||{})};
+    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[]),surat:JSON.stringify(S.surat||{}),pemilik_nama:(S.pemilik||{}).nama||'',pemilik_jabatan:(S.pemilik||{}).jabatan||'',pemilik_telp:(S.pemilik||{}).telp||'',pemilik_email:(S.pemilik||{}).email||'',pemilik_alamat:(S.pemilik||{}).alamat||''};
     const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:'Pengaturan',rows:[row],force:true})})).json();
-    if(j.status==='ok'){setDirty('Pengaturan',false);if(!silent)toast('Profil toko tersimpan ke Spreadsheet')}
+    if(j.status==='ok'){setDirty('Pengaturan',false);if(!silent)toast('Tersimpan ke Spreadsheet')}
     else if(!silent) toast('Gagal simpan profil: '+(j.message||'kesalahan server'));
   }catch(e){ if(!silent) toast('Gagal sinkron profil, tersimpan di perangkat'); }
 }
@@ -700,13 +701,61 @@ const SURAT_DEF={
   judul:'SURAT JALAN',subjudul:'Packing List Barang',perusahaan:'',kop:'',web:'',asalDefault:'',
   tampilLogo:true,tampilInfo:true,minBaris:10,kertas:'A4',orientasi:'landscape',warna:'#f2d600',
   kolom:[{k:'nama',l:'NAMA BARANG',on:true},{k:'jumlah',l:'JUMLAH',on:true},{k:'berat',l:'BERAT',on:true},{k:'ukuran',l:'UKURAN',on:true},{k:'volume',l:'VOLUME',on:true},{k:'m3',l:'M³',on:true},{k:'ket',l:'KETERANGAN',on:true}],
-  ttd:['HORMAT KAMI','PENGIRIM','PENERIMA','PENERIMA'],catatan:''
+  ttd:['HORMAT KAMI','PENGIRIM','PENERIMA','PENERIMA'],catatan:'',ttdNamaPemilik:false,
+  model:'ekspedisi',warna2:'#1b9a4b',tagline:'',minBaris2:5,kolom2:['NAMA BARANG','QTY','KETERANGAN'],
+  perhatian:'1. Surat Jalan ini bukti Penerimaan Barang\n2. Surat jalan ini bukan bukti Penjualan\n3. Surat Jalan ini akan dilengkapi dengan Nota sebagai bukti penjualan',
+  pernyataan:'BARANG SUDAH DITERIMA DALAM KEADAAN BAIK DAN CUKUP oleh:\n(Tanda tangan dan cap (Stempel) Perusahaan)',
+  ttd2:['Penerima / Pembeli','Bagian Pengiriman','{PERUSAHAAN}']
 };
 function sjConf(){
   const u=S.surat||{}, c=Object.assign({},SURAT_DEF,u);
   c.kolom=(Array.isArray(u.kolom)&&u.kolom.length)?u.kolom:SURAT_DEF.kolom;
   c.ttd=(Array.isArray(u.ttd)&&u.ttd.length)?u.ttd:SURAT_DEF.ttd;
+  c.kolom2=(Array.isArray(u.kolom2)&&u.kolom2.length===3)?u.kolom2:SURAT_DEF.kolom2;
+  c.ttd2=(Array.isArray(u.ttd2)&&u.ttd2.length)?u.ttd2:SURAT_DEF.ttd2;
   return c;
+}
+function sjCols(c){
+  if(c.model==='nota') return [{k:'nama',l:c.kolom2[0]},{k:'jumlah',l:c.kolom2[1]},{k:'ket',l:c.kolom2[2]}];
+  return c.kolom.filter(k=>k.on);
+}
+function suratNotaHTML(d,c){
+  const per=c.perusahaan||S.nama||'', col=c.warna2||'#1b9a4b';
+  const kopTxt=c.kop||[S.alamat,S.telp?('Telp : '+S.telp):''].filter(Boolean).join('\n');
+  const alamat=String(kopTxt).split('\n').filter(x=>x.trim()).map(x=>E(x)).join(' &nbsp;|&nbsp; ');
+  const items=(d.items||[]).slice(); while(items.length<(+c.minBaris2||5)) items.push({});
+  const rows=items.map(i=>'<tr><td>'+E(i.nama||'')+'</td><td class="c">'+E(i.jumlah||'')+'</td><td>'+E(i.ket||'')+'</td></tr>').join('');
+  const dt=x=>'<span class="dt">'+E(x||'')+'</span>';
+  const perhatian=String(c.perhatian||'').split('\n').filter(x=>x.trim()).map(x=>'<li>'+E(x.replace(/^\s*\d+[.)]\s*/,''))+'</li>').join('');
+  const pern=String(c.pernyataan||'').split('\n').filter(x=>x.trim()).map((x,i)=>i===0?'<b><i>'+E(x)+'</i></b>':'<b>'+E(x)+'</b>').join('<br>');
+  const owner=(c.ttdNamaPemilik&&S.pemilik&&S.pemilik.nama)?S.pemilik.nama:'';
+  const ttd=c.ttd2.slice(0,4).map(t=>t==='{PERUSAHAAN}'?per:t);
+  const sign='<table class="sg"><tr>'+ttd.map(t=>'<th>'+E(t)+'</th>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="sp"></td>').join('')+'</tr><tr>'+ttd.map((t,i)=>'<td><div class="pr"><span>(</span><span class="nx">'+(i===ttd.length-1?E(owner):'')+'</span><span>)</span></div></td>').join('')+'</tr></table>';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+E(c.judul)+' '+E(d.no||'')+'</title><style>'+
+  ':root{--c:'+E(col)+'}@page{size:'+sjPaper(c)+';margin:8mm}*{box-sizing:border-box}'+
+  'body{font-family:"Arial Narrow",Arial,Helvetica,sans-serif;color:var(--c);font-size:10px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  '.pg{border-left:2px dotted var(--c);border-bottom:2px solid var(--c);padding:0 0 3mm 6mm}'+
+  '.h{display:flex;align-items:center;gap:10px;margin-bottom:3mm}.h img{max-height:17mm;max-width:38mm;object-fit:contain;display:block}'+
+  '.h .nm{flex:1}.h .co{font-size:17px;font-weight:800;line-height:1.05}.h .tg{font-size:9px;font-weight:700;margin-top:2px}'+
+  '.h .ti{font-size:21px;font-weight:800;letter-spacing:.5px;text-align:center}.h .ti .t{text-decoration:underline}.h .ti small{display:block;font-size:8px;font-weight:600;letter-spacing:0}'+
+  '.kd{display:flex;justify-content:space-between;gap:10mm;font-size:11px}.kd .r{width:44%}'+
+  '.ln{display:flex;gap:4px;align-items:flex-end;margin:1.2mm 0}.ln .lb{min-width:19mm}.ln .dt{flex:1;border-bottom:1px dotted var(--c);min-height:4.2mm;padding-left:3px;color:#111}'+
+  '.ad{font-weight:800;font-size:9.5px;margin:2mm 0}'+
+  'table{border-collapse:collapse;width:100%}.t2,.cp{border:2px solid var(--c)}'+
+  '.t2 th{border:2px solid var(--c);padding:2px;font-size:12px;letter-spacing:1px;text-align:center}'+
+  '.t2 td{border-left:2px solid var(--c);border-right:2px solid var(--c);padding:1px 5px;height:5.4mm;font-size:10px;color:#111}.t2 td.c{text-align:center}'+
+  '.cp{margin-top:-2px}.cp td{vertical-align:top;padding:2px 6px}.cp .ct{width:54%;border-right:2px solid var(--c);height:15mm;font-size:12px;font-weight:800}.cp .ct span{font-size:10px;font-weight:400;color:#111;white-space:pre-wrap}'+
+  '.cp .pe{font-size:7px;font-weight:700}.cp ol{margin:1px 0 0;padding-left:11px}.cp li{margin:0}'+
+  '.pn{font-size:10.5px;margin-top:2mm;line-height:1.3}'+
+  '.sg{margin-top:1mm;page-break-inside:avoid}.sg th{font-size:11px;font-weight:800;text-align:left;padding:1px 4px}.sg td{padding:0 4px}.sg .sp{height:10mm}.pr{display:flex;gap:3px;font-size:12px;font-weight:700;width:85%}.pr .nx{flex:1;text-align:center;font-weight:400;color:#111;font-size:10px;align-self:flex-end}'+
+  '</style></head><body><div class="pg">'+
+  '<div class="h">'+(c.tampilLogo&&S.logo?'<img src="'+S.logo+'">':'')+'<div class="nm"><div class="co">'+E(per)+'</div><div class="tg">'+E(c.tagline||S.slogan||'')+'</div></div><div class="ti"><span class="t">'+E(c.judul)+'</span>'+(d.no?'<small>No. '+E(d.no)+'</small>':'')+'</div></div>'+
+  '<div class="kd"><div style="flex:1"><div class="ln"><span class="lb">Kpd Yth.</span></div><div class="ln"><span class="lb">Nama</span>:'+dt(d.penerima)+'</div><div class="ln"><span class="lb">Alamat</span>:'+dt(d.tujuan)+'</div><div class="ln"><span class="lb">No. Telp</span>:'+dt(d.telp)+'</div></div>'+
+  '<div class="r"><div class="ln"><span class="lb">No. Nota</span>:'+dt(d.inv)+'</div><div class="ln"><span class="lb">Tanggal</span>:'+dt(sjTgl(d.tgl))+'</div></div></div>'+
+  '<div class="ad">'+alamat+'</div>'+
+  '<table class="t2"><tr>'+c.kolom2.map((k,i)=>'<th style="width:'+(i===0?'47%':i===1?'16%':'37%')+'">'+E(k)+'</th>').join('')+'</tr>'+rows+'</table>'+
+  '<table class="cp"><tr><td class="ct">CATATAN : <span>'+E(d.catatan||'')+'</span></td><td><div class="pe">PERHATIAN :<ol>'+perhatian+'</ol></div></td></tr></table>'+
+  '<div class="pn">'+pern+'</div>'+sign+'</div></body></html>';
 }
 const SJ_BLANK=()=>({tgl:today(),penerima:'',telp:'',tujuan:'',asal:sjConf().asalDefault||'',inv:'',kendaraan:'',sopir:'',catatan:'',items:[{},{},{}]});
 let SJ=SJ_BLANK(), SJ_OPEN=false;
@@ -723,6 +772,7 @@ function sjPaper(c){
 }
 function suratHTML(d){
   const c=sjConf(); d=d||{};
+  if(c.model==='nota') return suratNotaHTML(d,c);
   const per=c.perusahaan||S.nama||'';
   const kopTxt=c.kop||[S.alamat,S.telp?('Telp / WA: '+S.telp):''].filter(Boolean).join('\n');
   const kop=String(kopTxt).split('\n').filter(x=>x.trim()).map(x=>E(x)).join('<br>');
@@ -737,7 +787,7 @@ function suratHTML(d){
     '<tr>'+l('Kepada')+v(d.penerima)+l('Telepon')+v(d.telp)+l('Sopir')+v(d.sopir)+'</tr>'+
     '<tr>'+l('Kendaraan / No. Polisi')+v(d.kendaraan)+l('Catatan')+'<td class="v" colspan="3">'+E(d.catatan||'')+'</td></tr></table>'):'';
   const ttd=c.ttd, w=(100/ttd.length)+'%';
-  const sign='<table class="ttd"><tr>'+ttd.map(t=>'<th style="width:'+w+'">'+E(t)+'</th>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="sp"></td>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="nm">Nama Jelas :</td>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="nm">Tanggal :</td>').join('')+'</tr></table>';
+  const sign='<table class="ttd"><tr>'+ttd.map(t=>'<th style="width:'+w+'">'+E(t)+'</th>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="sp"></td>').join('')+'</tr><tr>'+ttd.map((t,i)=>'<td class="nm">Nama Jelas : '+(i===0&&c.ttdNamaPemilik&&S.pemilik&&S.pemilik.nama?E(S.pemilik.nama):'')+'</td>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="nm">Tanggal :</td>').join('')+'</tr></table>';
   const tujuan=(d.penerima?'<b>'+E(d.penerima)+'</b>\n':'')+E(d.tujuan||'');
   return '<!doctype html><html><head><meta charset="utf-8"><title>'+E(c.judul)+' '+E(d.no||'')+'</title><style>'+
   ':root{--w:'+E(c.warna||'#f2d600')+'}@page{size:'+sjPaper(c)+';margin:8mm}*{box-sizing:border-box}'+
@@ -772,7 +822,7 @@ function cetakHTML(html){
 }
 
 P.kirim=()=>{
-  const c=sjConf(), cols=c.kolom.filter(k=>k.on);
+  const c=sjConf(), cols=sjCols(c);
   const sales=DB.Penjualan.slice().reverse().slice(0,40);
   const F=(lab,html)=>'<div class="sjf"><label>'+lab+'</label>'+html+'</div>';
   const I=(key,ph,type)=>'<input '+(type?'type="'+type+'" ':'')+'placeholder="'+ph+'" value="'+E(SJ[key])+'" oninput="SJ.'+key+'=this.value">';
@@ -781,7 +831,7 @@ P.kirim=()=>{
   const kolomSet=c.kolom.map((k,i)=>'<div class="row" style="margin-bottom:4px;align-items:center"><label style="flex:none;min-width:0;display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="sjc'+i+'" '+(k.on?'checked':'')+' style="width:auto"> Tampilkan</label><input id="sjl'+i+'" value="'+E(k.l)+'" placeholder="Judul kolom"></div>').join('');
   const opt=(a,b)=>'<option value="'+a+'" '+(b===a?'selected':'')+'>'+a+'</option>';
   return '<div class="card"><h3>Buat Surat Jalan</h3>'+
-    '<div class="row">'+F('TANGGAL',I('tgl','','date'))+F('AMBIL DARI PENJUALAN','<select onchange="sjFromSale(this.value)"><option value="">— pilih invoice (opsional) —</option>'+sales.map(t=>'<option value="'+t.id+'">'+E(t.no)+' · '+E(t.pelanggan)+' · '+E(t.tgl)+'</option>').join('')+'</select>')+F('NO. INVOICE',I('inv','Nomor invoice (opsional)'))+'</div>'+
+    '<div class="row">'+F('TANGGAL',I('tgl','','date'))+F('MODEL SURAT','<select onchange="sjSetModel(this.value)"><option value="ekspedisi" '+(c.model!=='nota'?'selected':'')+'>Model 1 - Packing List (ekspedisi)</option><option value="nota" '+(c.model==='nota'?'selected':'')+'>Model 2 - Nota Toko</option></select>')+F('AMBIL DARI PENJUALAN','<select onchange="sjFromSale(this.value)"><option value="">— pilih invoice (opsional) —</option>'+sales.map(t=>'<option value="'+t.id+'">'+E(t.no)+' · '+E(t.pelanggan)+' · '+E(t.tgl)+'</option>').join('')+'</select>')+F('NO. INVOICE',I('inv','Nomor invoice (opsional)'))+'</div>'+
     '<div class="row">'+F('KEPADA / PENERIMA','<input list="dlPelanggan" autocomplete="off" placeholder="Ketik atau pilih pelanggan" value="'+E(SJ.penerima)+'" oninput="SJ.penerima=this.value" onchange="sjPick(this.value)"><datalist id="dlPelanggan">'+DB.Pelanggan.map(x=>'<option value="'+E(x.nama)+'">'+E(x.telp||'')+'</option>').join('')+'</datalist>')+F('TELEPON',I('telp','Telepon / WhatsApp'))+'</div>'+
     '<div class="row">'+F('ASAL',I('asal','Kota / gudang asal'))+F('TUJUAN (ALAMAT)',I('tujuan','Alamat / kota tujuan'))+'</div>'+
     '<div class="row">'+F('KENDARAAN / NO. POLISI',I('kendaraan','Contoh: Truk L 1234 AB'))+F('SOPIR / EKSPEDISI',I('sopir','Nama sopir atau ekspedisi'))+F('CATATAN',I('catatan','Opsional'))+'</div>'+
@@ -791,15 +841,22 @@ P.kirim=()=>{
     '<div class="row" style="margin-top:6px"><button class="btn" onclick="sjSave()">Simpan &amp; Cetak</button><button class="btn o" onclick="cetakHTML(suratHTML({tgl:\'\',asal:\'\'}))">Cetak Formulir Kosong</button><button class="btn x" style="padding:10px 16px" onclick="SJ=SJ_BLANK();go(\'kirim\')">Reset</button></div></div>'+
     '<div class="card"><h3>Riwayat Surat Jalan</h3><div class="table-wrap"><table><tr><th>No<th>Tanggal<th>Kepada<th>Tujuan<th>Barang<th></tr>'+hist+'</table></div></div>'+
     '<div class="card"><details class="sjd"'+(SJ_OPEN?' open':'')+' ontoggle="SJ_OPEN=this.open"><summary>Pengaturan Isian Surat</summary><div style="margin-top:14px">'+
+    '<div class="row">'+F('MODEL SURAT AKTIF','<select id="sj_model"><option value="ekspedisi" '+(c.model!=='nota'?'selected':'')+'>Model 1 - Packing List (ekspedisi)</option><option value="nota" '+(c.model==='nota'?'selected':'')+'>Model 2 - Nota Toko</option></select>')+'</div>'+
     '<div class="row">'+F('JUDUL SURAT','<input id="sj_judul" value="'+E(c.judul)+'">')+F('SUB JUDUL TABEL','<input id="sj_sub" value="'+E(c.subjudul)+'" placeholder="Kosongkan bila tidak perlu">')+F('NAMA PERUSAHAAN (KOSONG = NAMA TOKO)','<input id="sj_per" value="'+E(c.perusahaan)+'">')+'</div>'+
     '<div class="row">'+F('ALAMAT / KONTAK DI KOP (SATU BARIS PER ALAMAT)','<textarea id="sj_kop" rows="4" placeholder="Kosong = alamat &amp; telepon dari Profil Toko">'+E(c.kop)+'</textarea>')+F('WEBSITE / TEKS DI BAWAH LOGO','<input id="sj_web" value="'+E(c.web)+'">')+F('ASAL BAWAAN','<input id="sj_asal" value="'+E(c.asalDefault)+'" placeholder="Terisi otomatis di form">')+'</div>'+
     '<div class="row">'+F('UKURAN KERTAS','<select id="sj_kertas">'+['A4','A5','Letter','F4'].map(x=>opt(x,c.kertas)).join('')+'</select>')+F('ORIENTASI','<select id="sj_ori"><option value="landscape" '+(c.orientasi!=='portrait'?'selected':'')+'>Landscape (mendatar)</option><option value="portrait" '+(c.orientasi==='portrait'?'selected':'')+'>Portrait (tegak)</option></select>')+F('JUMLAH BARIS TABEL MINIMAL','<input id="sj_min" type="number" min="1" max="40" value="'+(+c.minBaris||10)+'">')+F('WARNA JUDUL','<input id="sj_warna" type="color" value="'+E(c.warna)+'" style="height:38px;padding:2px">')+'</div>'+
     '<div class="row"><label style="flex:none;min-width:0;font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="sj_logo" '+(c.tampilLogo?'checked':'')+' style="width:auto"> Tampilkan logo</label><label style="flex:none;min-width:0;font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="sj_info" '+(c.tampilInfo?'checked':'')+' style="width:auto"> Tampilkan isian No. Surat, Kepada, Sopir, dll.</label></div>'+
-    '<div style="font-size:11px;color:var(--muted);margin:8px 0 6px;font-weight:600">KOLOM TABEL BARANG</div>'+kolomSet+
+    '<div style="font-size:11px;color:var(--muted);margin:8px 0 6px;font-weight:600">KOLOM TABEL BARANG (MODEL 1)</div>'+kolomSet+
+    '<div style="font-size:11px;color:var(--muted);margin:14px 0 6px;font-weight:600">KHUSUS MODEL 2 - NOTA TOKO</div>'+
+    '<div class="row">'+F('WARNA TEMA','<input id="sj_w2" type="color" value="'+E(c.warna2)+'" style="height:38px;padding:2px">')+F('TEKS DI BAWAH NAMA PERUSAHAAN','<input id="sj_tag" value="'+E(c.tagline)+'" placeholder="Kosong = slogan toko, contoh: Menjual : Berbagai Macam Perlengkapan Mebel">')+F('JUMLAH BARIS TABEL MINIMAL','<input id="sj_min2" type="number" min="1" max="40" value="'+(+c.minBaris2||5)+'">')+'</div>'+
+    '<div class="row">'+F('JUDUL 3 KOLOM TABEL (PISAHKAN KOMA)','<input id="sj_k2" value="'+E(c.kolom2.join(', '))+'">')+F('NAMA KOLOM TANDA TANGAN (PISAHKAN KOMA)','<input id="sj_ttd2" value="'+E(c.ttd2.map(t=>t==='{PERUSAHAAN}'?(c.perusahaan||S.nama||''):t).join(', '))+'">')+'</div>'+
+    '<div class="row">'+F('KOTAK PERHATIAN (SATU POIN PER BARIS)','<textarea id="sj_perh" rows="4">'+E(c.perhatian)+'</textarea>')+F('PERNYATAAN PENERIMAAN BARANG','<textarea id="sj_pern" rows="4">'+E(c.pernyataan)+'</textarea>')+'</div>'+
+    '<div class="row"><label style="flex:none;min-width:0;font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="sj_pemtt" '+(c.ttdNamaPemilik?'checked':'')+' style="width:auto"> Cetak nama pemilik (dari Profil Pemilik) pada tanda tangan toko</label></div>'+
     '<div class="row" style="margin-top:8px">'+F('KOLOM TANDA TANGAN (PISAHKAN DENGAN KOMA)','<input id="sj_ttd" value="'+E(c.ttd.join(', '))+'">')+F('CATATAN DI BAWAH SURAT','<input id="sj_cat" value="'+E(c.catatan)+'" placeholder="Opsional">')+'</div>'+
     '<div class="row"><button class="btn" onclick="sjSaveConf()">Simpan Pengaturan Surat</button><button class="btn o" onclick="cetakHTML(suratHTML({tgl:\'\',asal:\'\'}))">Cetak Contoh</button><button class="btn x" style="padding:10px 16px" onclick="sjResetConf()">Kembalikan Default</button></div>'+
     '</div></details></div>';
 };
+function sjSetModel(v){ S.surat=Object.assign({},S.surat||{},{model:v}); saveS(); syncSettings(true); go('kirim'); }
 function sjPick(nama){
   const f=DB.Pelanggan.find(x=>String(x.nama).toLowerCase()===String(nama).toLowerCase());
   if(!f) return;
@@ -846,7 +903,11 @@ function sjSaveConf(){
     kertas:g('sj_kertas').value,orientasi:g('sj_ori').value,minBaris:Math.min(40,Math.max(1,+g('sj_min').value||10)),warna:g('sj_warna').value||'#f2d600',
     tampilLogo:g('sj_logo').checked,tampilInfo:g('sj_info').checked,
     kolom:c.kolom.map((k,i)=>({k:k.k,l:g('sjl'+i).value.trim()||k.l,on:g('sjc'+i).checked})),
-    ttd:ttd.length?ttd:SURAT_DEF.ttd,catatan:g('sj_cat').value.trim()
+    ttd:ttd.length?ttd:SURAT_DEF.ttd,catatan:g('sj_cat').value.trim(),
+    model:g('sj_model').value,warna2:g('sj_w2').value||'#1b9a4b',tagline:g('sj_tag').value.trim(),minBaris2:Math.min(40,Math.max(1,+g('sj_min2').value||5)),
+    kolom2:(()=>{const a=g('sj_k2').value.split(',').map(x=>x.trim());return a.length===3&&a.every(Boolean)?a:SURAT_DEF.kolom2})(),
+    ttd2:(()=>{const a=g('sj_ttd2').value.split(',').map(x=>x.trim()).filter(Boolean);return a.length?a.slice(0,4):SURAT_DEF.ttd2})(),
+    perhatian:g('sj_perh').value,pernyataan:g('sj_pern').value,ttdNamaPemilik:g('sj_pemtt').checked
   };
   if(!S.surat.kolom.some(k=>k.on)) return alert('Minimal satu kolom tabel harus aktif');
   SJ_OPEN=true; saveS(); syncSettings(); SJ.asal=SJ.asal||S.surat.asalDefault; toast('Pengaturan surat tersimpan'); go('kirim');
@@ -918,6 +979,22 @@ function delMitra(kind,id){
   DB[kind]=DB[kind].filter(x=>x.id!==id); sync(kind); mitraGo(kind);
 }
 
+
+// ===== Profil Pemilik =====
+const pemilikCard=()=>{
+  const o=S.pemilik||{};
+  const F=(lab,id,val,ph)=>'<div class="sjf"><label>'+lab+'</label><input id="'+id+'" value="'+E(val||'')+'" placeholder="'+ph+'"></div>';
+  return '<div class="card" style="margin-top:16px"><h3>Profil Pemilik</h3><p style="color:var(--muted);font-size:12px;margin:0 0 10px">Disimpan di spreadsheet (sheet Pengaturan), sehingga sama di semua perangkat.</p>'+
+    '<div class="row">'+F('NAMA LENGKAP','po_nama',o.nama,'Nama pemilik')+F('JABATAN','po_jab',o.jabatan,'Contoh: Pemilik / Direktur')+'</div>'+
+    '<div class="row">'+F('TELEPON / WHATSAPP','po_telp',o.telp,'08xx...')+F('EMAIL','po_mail',o.email,'nama@email.com')+'</div>'+
+    '<div class="row">'+F('ALAMAT','po_alamat',o.alamat,'Alamat pemilik')+'</div>'+
+    '<button class="btn" onclick="simpanPemilik()">Simpan Profil Pemilik</button></div>';
+};
+function simpanPemilik(){
+  const g=i=>document.getElementById(i).value.trim();
+  S.pemilik={nama:g('po_nama'),jabatan:g('po_jab'),telp:g('po_telp'),email:g('po_mail'),alamat:g('po_alamat')};
+  saveS(); syncSettings();
+}
 // ===== Backup & Restore =====
 const daysSinceBackup=()=>{const t=localStorage.getItem('lastBackup');return t?Math.floor((Date.now()-new Date(t))/864e5):null};
 function markBackup(){try{localStorage.setItem('lastBackup',new Date().toISOString())}catch(e){}}
@@ -969,7 +1046,7 @@ const backupBanner=()=>{
   if(d!==null&&d<7) return '';
   return '<div class="card" style="border-color:#e8b4b8;background:#fff5f5;margin-bottom:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><strong>⚠ '+(d===null?'Belum pernah backup.':'Sudah '+d+' hari belum backup.')+'</strong> Unduh salinan data agar aman.</span><button class="btn" onclick="downloadBackup()">Backup sekarang</button></div>';
 };
-{const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+backupCard();P.dash=()=>backupBanner()+_dash0();}
+{const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+pemilikCard()+backupCard();P.dash=()=>backupBanner()+_dash0();}
 
 // Init
 if(S.url){ fetch(S.url+'?sheet=Pengaturan').then(r=>r.json()).then(r=>{ if(Array.isArray(r.Pengaturan)&&r.Pengaturan.length&&!isDirty('Pengaturan')){applySettings(r.Pengaturan);if(cur==='set'&&window.CURRENT)go('set')} }).catch(()=>{}); }
