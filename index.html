@@ -28,6 +28,12 @@ button,input,select,textarea{font:inherit}button{cursor:pointer;border:0}
 .btn-logout{width:100%;margin-top:12px;padding:11px 14px;border-radius:10px;background:#fff;color:#9e1b25;font-size:14px;font-weight:800;letter-spacing:.3px;border:2px solid #fff;box-shadow:0 4px 12px #00000030;transition:background .15s,transform .1s}
 .btn-logout:hover{background:#ffe3c2;border-color:#ffe3c2}
 .btn-logout:active{transform:scale(.98)}
+.sjf label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px;letter-spacing:.5px;font-weight:600}
+.sjf input,.sjf select,.sjf textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:13px;outline:none}
+.sjt input{width:100%;min-width:80px;padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px}
+.sjt td{padding:4px 4px}
+details.sjd>summary{cursor:pointer;font-weight:700;font-size:15px;list-style:none}
+details.sjd>summary::before{content:'▸ ';color:var(--muted)}details.sjd[open]>summary::before{content:'▾ '}
 .main{min-width:0;padding:27px 30px 35px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:25px}
 .eyebrow{color:var(--wood);font-size:10px;letter-spacing:2px;font-weight:700}
@@ -297,7 +303,7 @@ const DEFAULT_KATEGORI = [
 const CFG=Object.assign({SCRIPT_URL:'https://script.google.com/macros/s/AKfycbzHmofSPCsXWMi3Sq7ZpsVB8dscjM_ZGhSYCldNd9W4jSSLBqkzS5zI7MVYITZKTvUkZA/exec'},window.APP_CONFIG||{});
 let S=JSON.parse(localStorage.getItem('set')||'{"nama":"Riyadh Meubel","alamat":"","telp":"","slogan":"Premium Furniture","logo":"https://raw.githubusercontent.com/Hadvhy/Riyadh-Meubel-POS/main/logo%20riyadh.jpeg","url":"","kategoriTambahan":[]}');
 if(CFG.SCRIPT_URL)S.url=CFG.SCRIPT_URL;
-let DB=JSON.parse(localStorage.getItem('db')||'null')||{Produk:[],Penjualan:[],Pembelian:[],Pengeluaran:[],Pelanggan:[],Supplier:[]};
+let DB=JSON.parse(localStorage.getItem('db')||'null')||{Produk:[],Penjualan:[],Pembelian:[],Pengeluaran:[],Pelanggan:[],Supplier:[],Pengiriman:[]};
 function normItems(v){
   if(Array.isArray(v)) return v;
   if(typeof v==='string'){ try{ const p=JSON.parse(v); if(Array.isArray(p)) return p; }catch(e){} }
@@ -311,8 +317,8 @@ function normTgl(v){
   return v;
 }
 function normDB(){
-  ['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier'].forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; });
-  ['Penjualan','Pembelian'].forEach(k=>{ DB[k]=DB[k].map(x=>({...x,items:normItems(x.items),tgl:normTgl(x.tgl)})); });
+  ['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier','Pengiriman'].forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; });
+  ['Penjualan','Pembelian','Pengiriman'].forEach(k=>{ DB[k]=DB[k].map(x=>({...x,items:normItems(x.items),tgl:normTgl(x.tgl)})); });
   DB.Pengeluaran=DB.Pengeluaran.map(x=>({...x,tgl:normTgl(x.tgl)}));
 }
 normDB();
@@ -343,6 +349,7 @@ const ALL_MENU=[
   {id:'stok',label:'Data Produk',ico:'▧',roles:['pemilik','gudang']},
   {id:'supplier',label:'Supplier',ico:'🚚',roles:['pemilik','gudang']},
   {id:'beli',label:'Pembelian',ico:'⇄',roles:['pemilik','gudang']},
+  {id:'kirim',label:'Pengiriman Barang',ico:'📦',roles:['pemilik','gudang']},
   {id:'biaya',label:'Pengeluaran',ico:'💰',roles:['pemilik']},
   {id:'lap',label:'Laporan',ico:'📊',roles:['pemilik']},
   {id:'set',label:'Pengaturan',ico:'⚙',roles:['pemilik']},
@@ -420,6 +427,7 @@ function applySettings(r){
   S.slogan=String(x.slogan||'');
   S.logo=String(x.logo||'');
   try{const kt=JSON.parse(x.kategori||'[]');if(Array.isArray(kt))S.kategoriTambahan=kt}catch(e){}
+  try{const sj=JSON.parse(x.surat||'{}');if(sj&&typeof sj==='object'&&Object.keys(sj).length)S.surat=sj}catch(e){}
   saveS();
   return true;
 }
@@ -427,8 +435,14 @@ async function syncSettings(silent){
   saveS();
   if(!S.url) return;
   setDirty('Pengaturan',true);
+  // logo lama yang masih besar diperkecil dulu (batas sel Google Sheets 50.000 karakter)
+  if(S.logo && S.logo.length>45000){
+    const small=await new Promise(res=>shrinkLogo(S.logo,res));
+    if(!small){ toast('Logo terlalu besar untuk spreadsheet. Unggah ulang logo yang lebih sederhana.'); return; }
+    S.logo=small; saveS();
+  }
   try{
-    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[])};
+    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[]),surat:JSON.stringify(S.surat||{})};
     const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:'Pengaturan',rows:[row],force:true})})).json();
     if(j.status==='ok'){setDirty('Pengaturan',false);if(!silent)toast('Profil toko tersimpan ke Spreadsheet')}
     else if(!silent) toast('Gagal simpan profil: '+(j.message||'kesalahan server'));
@@ -488,7 +502,7 @@ function go(p){
   if(!allowed.includes(p)) p=allowed[0]||'kasir';
   cur=p;
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
-  const titles={dash:'Dashboard',kasir:'Kasir Penjualan',beli:'Pembelian Stok',stok:'Data Produk',pelanggan:'Data Pelanggan',supplier:'Data Supplier',biaya:'Pengeluaran',lap:'Laporan',set:'Pengaturan',users:'Manajemen Pengguna'};
+  const titles={dash:'Dashboard',kasir:'Kasir Penjualan',beli:'Pembelian Stok',stok:'Data Produk',pelanggan:'Data Pelanggan',supplier:'Data Supplier',kirim:'Pengiriman Barang',biaya:'Pengeluaran',lap:'Laporan',set:'Pengaturan',users:'Manajemen Pengguna'};
   document.getElementById('pageTitle').textContent=titles[p]||'POS';
   document.getElementById('view').innerHTML=P[p]?P[p]():'';
   if(p==='kasir')renderKasir();
@@ -680,6 +694,168 @@ function logout(){
 
 
 
+
+// ===== Pengiriman Barang / Surat Jalan =====
+const SURAT_DEF={
+  judul:'SURAT JALAN',subjudul:'Packing List Barang',perusahaan:'',kop:'',web:'',asalDefault:'',
+  tampilLogo:true,tampilInfo:true,minBaris:10,kertas:'A4',orientasi:'landscape',warna:'#f2d600',
+  kolom:[{k:'nama',l:'NAMA BARANG',on:true},{k:'jumlah',l:'JUMLAH',on:true},{k:'berat',l:'BERAT',on:true},{k:'ukuran',l:'UKURAN',on:true},{k:'volume',l:'VOLUME',on:true},{k:'m3',l:'M³',on:true},{k:'ket',l:'KETERANGAN',on:true}],
+  ttd:['HORMAT KAMI','PENGIRIM','PENERIMA','PENERIMA'],catatan:''
+};
+function sjConf(){
+  const u=S.surat||{}, c=Object.assign({},SURAT_DEF,u);
+  c.kolom=(Array.isArray(u.kolom)&&u.kolom.length)?u.kolom:SURAT_DEF.kolom;
+  c.ttd=(Array.isArray(u.ttd)&&u.ttd.length)?u.ttd:SURAT_DEF.ttd;
+  return c;
+}
+const SJ_BLANK=()=>({tgl:today(),penerima:'',telp:'',tujuan:'',asal:sjConf().asalDefault||'',inv:'',kendaraan:'',sopir:'',catatan:'',items:[{},{},{}]});
+let SJ=SJ_BLANK(), SJ_OPEN=false;
+
+function sjTgl(t){
+  if(!t) return '';
+  const m=String(t).match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return String(t);
+  return new Date(+m[1],+m[2]-1,+m[3]).toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+}
+function sjPaper(c){
+  const land=c.orientasi!=='portrait';
+  if(c.kertas==='F4') return land?'330mm 215mm':'215mm 330mm';
+  return c.kertas+' '+(land?'landscape':'portrait');
+}
+function suratHTML(d){
+  const c=sjConf(); d=d||{};
+  const per=c.perusahaan||S.nama||'';
+  const kopTxt=c.kop||[S.alamat,S.telp?('Telp / WA: '+S.telp):''].filter(Boolean).join('\n');
+  const kop=String(kopTxt).split('\n').filter(x=>x.trim()).map(x=>E(x)).join('<br>');
+  const cols=c.kolom.filter(k=>k.on);
+  const items=(d.items||[]).slice();
+  while(items.length<(+c.minBaris||10)) items.push({});
+  const th=cols.map(k=>'<th style="'+(k.k==='nama'?'width:32%':k.k==='ket'?'width:18%':'')+'">'+E(k.l)+'</th>').join('');
+  const rows=items.map(i=>'<tr>'+cols.map(k=>'<td>'+E(i[k.k]||'')+'</td>').join('')+'</tr>').join('');
+  const v=x=>'<td class="v">'+E(x||'')+'</td>';
+  const l=x=>'<td class="l">'+x+'</td>';
+  const info=c.tampilInfo?('<table class="info"><tr>'+l('No. Surat')+v(d.no)+l('Tanggal')+v(sjTgl(d.tgl))+l('No. Invoice')+v(d.inv)+'</tr>'+
+    '<tr>'+l('Kepada')+v(d.penerima)+l('Telepon')+v(d.telp)+l('Sopir')+v(d.sopir)+'</tr>'+
+    '<tr>'+l('Kendaraan / No. Polisi')+v(d.kendaraan)+l('Catatan')+'<td class="v" colspan="3">'+E(d.catatan||'')+'</td></tr></table>'):'';
+  const ttd=c.ttd, w=(100/ttd.length)+'%';
+  const sign='<table class="ttd"><tr>'+ttd.map(t=>'<th style="width:'+w+'">'+E(t)+'</th>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="sp"></td>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="nm">Nama Jelas :</td>').join('')+'</tr><tr>'+ttd.map(()=>'<td class="nm">Tanggal :</td>').join('')+'</tr></table>';
+  const tujuan=(d.penerima?'<b>'+E(d.penerima)+'</b>\n':'')+E(d.tujuan||'');
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+E(c.judul)+' '+E(d.no||'')+'</title><style>'+
+  ':root{--w:'+E(c.warna||'#f2d600')+'}@page{size:'+sjPaper(c)+';margin:8mm}*{box-sizing:border-box}'+
+  'body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;margin:0}'+
+  'table{border-collapse:collapse;width:100%}'+
+  '.head{display:flex;gap:12px;align-items:flex-start;margin-bottom:6px}.hl{width:24%}.hl img{max-width:100%;max-height:26mm;object-fit:contain;display:block}.hl .web{font-size:11px;margin-top:3px}'+
+  '.hc{flex:1}.hc h1{margin:0;font-size:26px;letter-spacing:1px}.hc .per{font-weight:700;font-size:13px;margin:2px 0 4px}.hc .kop{font-size:8.5px;line-height:1.4}'+
+  '.hr{width:30%}.ab td{border:1px solid #111;padding:3px 6px}.ab .bar{background:var(--w);font-weight:700;font-size:12px}.ab .val{height:19mm;vertical-align:top;white-space:pre-wrap}'+
+  '.info{margin:4px 0}.info td{padding:2px 4px;font-size:10px}.info .l{width:1%;white-space:nowrap;font-weight:700}.info .v{border-bottom:1px dotted #666}'+
+  'h2.pl{text-align:center;font-size:12px;margin:6px 0 3px}'+
+  '.items th,.items td{border:1px solid #111;padding:3px 4px;font-size:10px}.items th{text-align:center;font-weight:700}.items td{height:6.4mm}'+
+  '.ttd{margin-top:8px;page-break-inside:avoid}.ttd th{background:var(--w);border:1px solid #111;padding:4px;font-size:11px}.ttd td{border:1px solid #111}.ttd .sp{height:22mm}.ttd .nm{height:5mm;font-size:8px;padding:1px 4px}'+
+  '.cat{font-size:9px;margin-top:6px;white-space:pre-wrap}'+
+  '.bar,.ttd th{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+  '</style></head><body>'+
+  '<div class="head"><div class="hl">'+(c.tampilLogo&&S.logo?'<img src="'+S.logo+'">':'')+(c.web?'<div class="web">'+E(c.web)+'</div>':'')+'</div>'+
+  '<div class="hc"><h1>'+E(c.judul)+'</h1><div class="per">'+E(per)+'</div><div class="kop">'+kop+'</div></div>'+
+  '<div class="hr"><table class="ab"><tr><td class="bar">Asal :</td></tr><tr><td class="val">'+E(d.asal||'')+'</td></tr><tr><td class="bar">Tujuan :</td></tr><tr><td class="val">'+tujuan+'</td></tr></table></div></div>'+
+  info+(c.subjudul?'<h2 class="pl">'+E(c.subjudul)+'</h2>':'')+
+  '<table class="items"><tr>'+th+'</tr>'+rows+'</table>'+sign+(c.catatan?'<div class="cat">'+E(c.catatan)+'</div>':'')+
+  '</body></html>';
+}
+function cetakHTML(html){
+  const old=document.getElementById('printFrame'); if(old) old.remove();
+  const f=document.createElement('iframe');
+  f.id='printFrame'; f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  const d=f.contentWindow.document; d.open(); d.write(html); d.close();
+  // tunggu logo selesai dimuat (maks. 3 detik) sebelum dialog cetak dibuka
+  const ready=Promise.all(Array.from(d.images).map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r})));
+  Promise.race([ready,new Promise(r=>setTimeout(r,3000))]).then(()=>setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){toast('Tidak bisa membuka dialog cetak')}},200));
+}
+
+P.kirim=()=>{
+  const c=sjConf(), cols=c.kolom.filter(k=>k.on);
+  const sales=DB.Penjualan.slice().reverse().slice(0,40);
+  const F=(lab,html)=>'<div class="sjf"><label>'+lab+'</label>'+html+'</div>';
+  const I=(key,ph,type)=>'<input '+(type?'type="'+type+'" ':'')+'placeholder="'+ph+'" value="'+E(SJ[key])+'" oninput="SJ.'+key+'=this.value">';
+  const itemRows=SJ.items.map((it,n)=>'<tr>'+cols.map(k=>'<td><input '+(k.k==='nama'?'list="dlProdukSJ" ':'')+'value="'+E(it[k.k]||'')+'" oninput="SJ.items['+n+'].'+k.k+'=this.value"></td>').join('')+'<td><button class="btn x" onclick="SJ.items.splice('+n+',1);go(\'kirim\')">✕</button></td></tr>').join('');
+  const hist=DB.Pengiriman.slice().reverse().slice(0,30).map(x=>'<tr><td>'+E(x.no)+'<td>'+E(sjTgl(x.tgl))+'<td>'+E(x.penerima||'-')+'<td>'+E(x.tujuan||'')+'<td>'+(x.items||[]).length+' baris<td><button class="btn o" onclick="sjPrint(\''+x.id+'\')">Cetak</button> <button class="btn x" onclick="sjDel(\''+x.id+'\')">Hapus</button></tr>').join('')||'<tr><td colspan="6" style="color:var(--muted)">Belum ada surat jalan.</td></tr>';
+  const kolomSet=c.kolom.map((k,i)=>'<div class="row" style="margin-bottom:4px;align-items:center"><label style="flex:none;min-width:0;display:flex;gap:6px;align-items:center;font-size:12px"><input type="checkbox" id="sjc'+i+'" '+(k.on?'checked':'')+' style="width:auto"> Tampilkan</label><input id="sjl'+i+'" value="'+E(k.l)+'" placeholder="Judul kolom"></div>').join('');
+  const opt=(a,b)=>'<option value="'+a+'" '+(b===a?'selected':'')+'>'+a+'</option>';
+  return '<div class="card"><h3>Buat Surat Jalan</h3>'+
+    '<div class="row">'+F('TANGGAL',I('tgl','','date'))+F('AMBIL DARI PENJUALAN','<select onchange="sjFromSale(this.value)"><option value="">— pilih invoice (opsional) —</option>'+sales.map(t=>'<option value="'+t.id+'">'+E(t.no)+' · '+E(t.pelanggan)+' · '+E(t.tgl)+'</option>').join('')+'</select>')+F('NO. INVOICE',I('inv','Nomor invoice (opsional)'))+'</div>'+
+    '<div class="row">'+F('KEPADA / PENERIMA','<input list="dlPelanggan" autocomplete="off" placeholder="Ketik atau pilih pelanggan" value="'+E(SJ.penerima)+'" oninput="SJ.penerima=this.value" onchange="sjPick(this.value)"><datalist id="dlPelanggan">'+DB.Pelanggan.map(x=>'<option value="'+E(x.nama)+'">'+E(x.telp||'')+'</option>').join('')+'</datalist>')+F('TELEPON',I('telp','Telepon / WhatsApp'))+'</div>'+
+    '<div class="row">'+F('ASAL',I('asal','Kota / gudang asal'))+F('TUJUAN (ALAMAT)',I('tujuan','Alamat / kota tujuan'))+'</div>'+
+    '<div class="row">'+F('KENDARAAN / NO. POLISI',I('kendaraan','Contoh: Truk L 1234 AB'))+F('SOPIR / EKSPEDISI',I('sopir','Nama sopir atau ekspedisi'))+F('CATATAN',I('catatan','Opsional'))+'</div>'+
+    '<datalist id="dlProdukSJ">'+DB.Produk.map(p=>'<option value="'+E(p.nama)+'">').join('')+'</datalist>'+
+    '<div class="table-wrap"><table class="sjt"><tr>'+cols.map(k=>'<th>'+E(k.l)+'</th>').join('')+'<th></th></tr>'+itemRows+'</table></div>'+
+    '<div class="row" style="margin-top:10px"><button class="btn o" onclick="SJ.items.push({});go(\'kirim\')">+ Tambah baris</button><select onchange="sjAddProduk(this.value)"><option value="">+ Tambah dari produk</option>'+DB.Produk.map(p=>'<option value="'+p.id+'">'+E(p.nama)+'</option>').join('')+'</select></div>'+
+    '<div class="row" style="margin-top:6px"><button class="btn" onclick="sjSave()">Simpan &amp; Cetak</button><button class="btn o" onclick="cetakHTML(suratHTML({tgl:\'\',asal:\'\'}))">Cetak Formulir Kosong</button><button class="btn x" style="padding:10px 16px" onclick="SJ=SJ_BLANK();go(\'kirim\')">Reset</button></div></div>'+
+    '<div class="card"><h3>Riwayat Surat Jalan</h3><div class="table-wrap"><table><tr><th>No<th>Tanggal<th>Kepada<th>Tujuan<th>Barang<th></tr>'+hist+'</table></div></div>'+
+    '<div class="card"><details class="sjd"'+(SJ_OPEN?' open':'')+' ontoggle="SJ_OPEN=this.open"><summary>Pengaturan Isian Surat</summary><div style="margin-top:14px">'+
+    '<div class="row">'+F('JUDUL SURAT','<input id="sj_judul" value="'+E(c.judul)+'">')+F('SUB JUDUL TABEL','<input id="sj_sub" value="'+E(c.subjudul)+'" placeholder="Kosongkan bila tidak perlu">')+F('NAMA PERUSAHAAN (KOSONG = NAMA TOKO)','<input id="sj_per" value="'+E(c.perusahaan)+'">')+'</div>'+
+    '<div class="row">'+F('ALAMAT / KONTAK DI KOP (SATU BARIS PER ALAMAT)','<textarea id="sj_kop" rows="4" placeholder="Kosong = alamat &amp; telepon dari Profil Toko">'+E(c.kop)+'</textarea>')+F('WEBSITE / TEKS DI BAWAH LOGO','<input id="sj_web" value="'+E(c.web)+'">')+F('ASAL BAWAAN','<input id="sj_asal" value="'+E(c.asalDefault)+'" placeholder="Terisi otomatis di form">')+'</div>'+
+    '<div class="row">'+F('UKURAN KERTAS','<select id="sj_kertas">'+['A4','A5','Letter','F4'].map(x=>opt(x,c.kertas)).join('')+'</select>')+F('ORIENTASI','<select id="sj_ori"><option value="landscape" '+(c.orientasi!=='portrait'?'selected':'')+'>Landscape (mendatar)</option><option value="portrait" '+(c.orientasi==='portrait'?'selected':'')+'>Portrait (tegak)</option></select>')+F('JUMLAH BARIS TABEL MINIMAL','<input id="sj_min" type="number" min="1" max="40" value="'+(+c.minBaris||10)+'">')+F('WARNA JUDUL','<input id="sj_warna" type="color" value="'+E(c.warna)+'" style="height:38px;padding:2px">')+'</div>'+
+    '<div class="row"><label style="flex:none;min-width:0;font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="sj_logo" '+(c.tampilLogo?'checked':'')+' style="width:auto"> Tampilkan logo</label><label style="flex:none;min-width:0;font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="sj_info" '+(c.tampilInfo?'checked':'')+' style="width:auto"> Tampilkan isian No. Surat, Kepada, Sopir, dll.</label></div>'+
+    '<div style="font-size:11px;color:var(--muted);margin:8px 0 6px;font-weight:600">KOLOM TABEL BARANG</div>'+kolomSet+
+    '<div class="row" style="margin-top:8px">'+F('KOLOM TANDA TANGAN (PISAHKAN DENGAN KOMA)','<input id="sj_ttd" value="'+E(c.ttd.join(', '))+'">')+F('CATATAN DI BAWAH SURAT','<input id="sj_cat" value="'+E(c.catatan)+'" placeholder="Opsional">')+'</div>'+
+    '<div class="row"><button class="btn" onclick="sjSaveConf()">Simpan Pengaturan Surat</button><button class="btn o" onclick="cetakHTML(suratHTML({tgl:\'\',asal:\'\'}))">Cetak Contoh</button><button class="btn x" style="padding:10px 16px" onclick="sjResetConf()">Kembalikan Default</button></div>'+
+    '</div></details></div>';
+};
+function sjPick(nama){
+  const f=DB.Pelanggan.find(x=>String(x.nama).toLowerCase()===String(nama).toLowerCase());
+  if(!f) return;
+  SJ.penerima=String(f.nama);
+  if(!SJ.telp) SJ.telp=String(f.telp||'');
+  if(!SJ.tujuan) SJ.tujuan=String(f.alamat||'');
+  go('kirim');
+}
+function sjFromSale(id){
+  const t=DB.Penjualan.find(x=>x.id===id); if(!t) return;
+  SJ.inv=t.no; SJ.penerima=(String(t.pelanggan).toLowerCase()==='umum')?'':t.pelanggan;
+  const f=DB.Pelanggan.find(x=>String(x.nama).toLowerCase()===String(t.pelanggan).toLowerCase());
+  if(f){ SJ.telp=String(f.telp||''); SJ.tujuan=String(f.alamat||''); }
+  SJ.items=(t.items||[]).map(i=>({nama:i.nama,jumlah:String(i.qty)+' unit',berat:'',ukuran:'',volume:'',m3:'',ket:''}));
+  if(!SJ.items.length) SJ.items=[{}];
+  go('kirim');
+}
+function sjAddProduk(id){
+  if(!id) return; const p=DB.Produk.find(x=>x.id===id); if(!p) return;
+  const empty=SJ.items.findIndex(i=>!(i.nama||'').trim());
+  const row={nama:p.nama,jumlah:'1 unit'};
+  if(empty>=0) SJ.items[empty]=Object.assign({},SJ.items[empty],row); else SJ.items.push(row);
+  go('kirim');
+}
+function sjSave(){
+  const items=SJ.items.filter(i=>(i.nama||'').trim()).map(i=>Object.assign({},i));
+  if(!items.length) return alert('Isi minimal satu nama barang');
+  const pre='SJ-'+String(SJ.tgl).replace(/-/g,'')+'-';
+  const mx=Math.max(0,...DB.Pengiriman.filter(x=>String(x.no).startsWith(pre)).map(x=>parseInt(String(x.no).slice(pre.length))||0));
+  const rec={id:uid(),no:pre+String(mx+1).padStart(3,'0'),tgl:SJ.tgl,penerima:(SJ.penerima||'').trim(),telp:SJ.telp,tujuan:SJ.tujuan,asal:SJ.asal,inv:SJ.inv,kendaraan:SJ.kendaraan,sopir:SJ.sopir,catatan:SJ.catatan,items:items};
+  DB.Pengiriman.push(rec); sync('Pengiriman');
+  ensureMitra('Pelanggan',rec.penerima);
+  cetakHTML(suratHTML(rec));
+  SJ=SJ_BLANK(); go('kirim');
+}
+function sjPrint(id){const x=DB.Pengiriman.find(v=>v.id===id); if(x) cetakHTML(suratHTML(x))}
+function sjDel(id){ if(!confirm('Hapus surat jalan ini?')) return; DB.Pengiriman=DB.Pengiriman.filter(x=>x.id!==id); sync('Pengiriman'); go('kirim'); }
+function sjSaveConf(){
+  const g=i=>document.getElementById(i), c=sjConf();
+  const ttd=g('sj_ttd').value.split(',').map(x=>x.trim()).filter(Boolean);
+  S.surat={
+    judul:g('sj_judul').value.trim()||'SURAT JALAN',subjudul:g('sj_sub').value.trim(),perusahaan:g('sj_per').value.trim(),
+    kop:g('sj_kop').value,web:g('sj_web').value.trim(),asalDefault:g('sj_asal').value.trim(),
+    kertas:g('sj_kertas').value,orientasi:g('sj_ori').value,minBaris:Math.min(40,Math.max(1,+g('sj_min').value||10)),warna:g('sj_warna').value||'#f2d600',
+    tampilLogo:g('sj_logo').checked,tampilInfo:g('sj_info').checked,
+    kolom:c.kolom.map((k,i)=>({k:k.k,l:g('sjl'+i).value.trim()||k.l,on:g('sjc'+i).checked})),
+    ttd:ttd.length?ttd:SURAT_DEF.ttd,catatan:g('sj_cat').value.trim()
+  };
+  if(!S.surat.kolom.some(k=>k.on)) return alert('Minimal satu kolom tabel harus aktif');
+  SJ_OPEN=true; saveS(); syncSettings(); SJ.asal=SJ.asal||S.surat.asalDefault; toast('Pengaturan surat tersimpan'); go('kirim');
+}
+function sjResetConf(){
+  if(!confirm('Kembalikan pengaturan surat ke bawaan?')) return;
+  S.surat={}; SJ_OPEN=true; saveS(); syncSettings(); go('kirim');
+}
+
 // ===== Pelanggan & Supplier =====
 function canonNama(kind,nama){
   nama=String(nama||'').trim(); if(!nama) return '';
@@ -759,13 +935,13 @@ function restoreBackup(input){
     try{
       const d=JSON.parse(r.result);
       if(d.app!=='riyadh-meubel-pos'||!d.DB||typeof d.DB!=='object') throw new Error('format');
-      const ringkas=['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier'].map(k=>k+': '+((d.DB[k]||[]).length)).join('\n');
+      const ringkas=['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier','Pengiriman'].map(k=>k+': '+((d.DB[k]||[]).length)).join('\n');
       if(!confirm('Pulihkan backup tanggal '+String(d.tanggal||'').slice(0,10)+'?\n\n'+ringkas+'\n\nData saat ini akan DIGANTI (salinan sebelumnya disimpan sementara di perangkat).')){input.value='';return}
       try{localStorage.setItem('db_prev',JSON.stringify(DB))}catch(e){}
       DB=d.DB;normDB();saveDB();
       if(Array.isArray(d.Users)&&d.Users.length){USERS=d.Users.map(normUser);saveUsers()}
       if(d.Settings&&typeof d.Settings==='object'){const u=S.url;S=Object.assign({},S,d.Settings,{url:u});saveS();if(S.url)syncSettings(true)}
-      if(S.url){['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier'].forEach(k=>sync(k,true));syncUsers(true)}
+      if(S.url){['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier','Pengiriman'].forEach(k=>sync(k,true));syncUsers(true)}
       toast('Backup dipulihkan');go('set');
     }catch(e){alert('File backup tidak valid')}
   };
