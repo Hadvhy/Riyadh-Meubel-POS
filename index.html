@@ -244,6 +244,7 @@ window.doLogin = function(){
         <a href="#" onclick="alert('Hubungi pemilik untuk reset password');return false">Lupa Password?</a>
       </div>
       <button class="login-btn" id="btnLogin" type="button" onclick="window.doLogin && window.doLogin()">Masuk</button>
+      <p style="margin:12px 0 0;text-align:center;font-size:11px;color:#9ca3af">Demi keamanan, waktu login, alamat IP, dan perkiraan lokasi dicatat.</p>
     </div>
   </div>
 </div>
@@ -353,7 +354,8 @@ const ALL_MENU=[
   {id:'biaya',label:'Pengeluaran',ico:'💰',roles:['pemilik']},
   {id:'lap',label:'Laporan',ico:'📊',roles:['pemilik']},
   {id:'set',label:'Pengaturan',ico:'⚙',roles:['pemilik']},
-  {id:'users',label:'Manajemen Pengguna',ico:'👤',roles:['pemilik']}
+  {id:'users',label:'Manajemen Pengguna',ico:'👤',roles:['pemilik']},
+  {id:'stat',label:'Statistik Pengguna',ico:'📈',roles:['pemilik']}
 ];
 
 function getAllowedMenu(){
@@ -502,8 +504,9 @@ function go(p){
   const allowed=getAllowedMenu().map(m=>m.id);
   if(!allowed.includes(p)) p=allowed[0]||'kasir';
   cur=p;
+  if(p!=='stat') LOGS_ST='idle';
   document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.p===p));
-  const titles={dash:'Dashboard',kasir:'Kasir Penjualan',beli:'Pembelian Stok',stok:'Data Produk',pelanggan:'Data Pelanggan',supplier:'Data Supplier',kirim:'Pengiriman Barang',biaya:'Pengeluaran',lap:'Laporan',set:'Pengaturan',users:'Manajemen Pengguna'};
+  const titles={dash:'Dashboard',kasir:'Kasir Penjualan',beli:'Pembelian Stok',stok:'Data Produk',pelanggan:'Data Pelanggan',supplier:'Data Supplier',kirim:'Pengiriman Barang',stat:'Statistik Pengguna',biaya:'Pengeluaran',lap:'Laporan',set:'Pengaturan',users:'Manajemen Pengguna'};
   document.getElementById('pageTitle').textContent=titles[p]||'POS';
   document.getElementById('view').innerHTML=P[p]?P[p]():'';
   if(p==='kasir')renderKasir();
@@ -658,12 +661,14 @@ async function doLogin(){
   window._loggingIn=false;
   const found=USERS.find(x=>x.username&&x.username.toLowerCase()===u&&x.password===p);
   if(!found){
+    if(u) logEvent('gagal',{username:u});
     err.textContent=(state===false&&S.url)?'Username atau password salah (mode offline: memakai data tersimpan di perangkat)':'Username atau password salah';
     err.style.display='block';
     return;
   }
   const {password:_pw,...user}=found;
   CURRENT=user;
+  logEvent('berhasil',user);
   try{ sessionStorage.setItem('currentUser',JSON.stringify(user)); }catch(e){}
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='grid';
@@ -684,6 +689,7 @@ document.addEventListener('DOMContentLoaded', function(){
   if(pass) pass.addEventListener('keypress', function(e){ if(e.key==='Enter') doLogin(); });
 });
 function logout(){
+  if(window.CURRENT) logEventSync('logout',window.CURRENT);
   window.CURRENT=null;
   sessionStorage.removeItem('currentUser');
   document.getElementById('app').style.display='none';
@@ -995,6 +1001,130 @@ function simpanPemilik(){
   S.pemilik={nama:g('po_nama'),jabatan:g('po_jab'),telp:g('po_telp'),email:g('po_mail'),alamat:g('po_alamat')};
   saveS(); syncSettings();
 }
+
+// ===== Catatan login & Statistik Pengguna =====
+function deviceInfo(){
+  const ua=navigator.userAgent||''; let os='Lainnya';
+  if(/iPhone|iPad|iPod/.test(ua)) os='iOS'; else if(/Android/.test(ua)) os='Android'; else if(/Windows/.test(ua)) os='Windows'; else if(/Mac OS X/.test(ua)) os='macOS'; else if(/Linux/.test(ua)) os='Linux';
+  let br='Browser';
+  if(/Edg\//.test(ua)) br='Edge'; else if(/OPR\/|Opera/.test(ua)) br='Opera'; else if(/Chrome\//.test(ua)||/CriOS\//.test(ua)) br='Chrome'; else if(/Firefox\//.test(ua)) br='Firefox'; else if(/Safari\//.test(ua)) br='Safari';
+  return br+' · '+os+' · '+(/Mobi|Android|iPhone/.test(ua)?'HP':'Komputer');
+}
+const EMPTY_IP={ip:'',kota:'',wilayah:'',negara:'',lat:'',lon:'',isp:''};
+function cachedIp(){try{return JSON.parse(sessionStorage.getItem('ipinfo')||'null')||EMPTY_IP}catch(e){return EMPTY_IP}}
+async function getIpInfo(){
+  const c=cachedIp(); if(c.ip) return c;
+  const tryGet=async(url,map)=>{
+    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),4000);
+    try{const j=await (await fetch(url,{signal:ctl.signal})).json();clearTimeout(t);return map(j)}catch(e){clearTimeout(t);return null}
+  };
+  let info=await tryGet('https://ipwho.is/',j=>(j&&j.success!==false&&j.ip)?{ip:j.ip,kota:j.city||'',wilayah:j.region||'',negara:j.country||'',lat:j.latitude!=null?String(j.latitude):'',lon:j.longitude!=null?String(j.longitude):'',isp:(j.connection&&(j.connection.isp||j.connection.org))||''}:null);
+  if(!info) info=await tryGet('https://ipapi.co/json/',j=>(j&&j.ip&&!j.error)?{ip:j.ip,kota:j.city||'',wilayah:j.region||'',negara:j.country_name||'',lat:j.latitude!=null?String(j.latitude):'',lon:j.longitude!=null?String(j.longitude):'',isp:j.org||''}:null);
+  if(info&&info.ip){try{sessionStorage.setItem('ipinfo',JSON.stringify(info))}catch(e){}}
+  return info||EMPTY_IP;
+}
+function buildLogRow(status,user,ip){
+  const n=new Date(), p=x=>String(x).padStart(2,'0');
+  return {id:uid(),waktu:n.toISOString(),tgl:n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate()),jam:p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds()),
+    username:user.username||'',nama:user.nama||'',role:user.role||'',status:status,
+    ip:ip.ip,kota:ip.kota,wilayah:ip.wilayah,negara:ip.negara,lat:ip.lat,lon:ip.lon,isp:ip.isp,perangkat:deviceInfo(),ua:(navigator.userAgent||'').slice(0,180)};
+}
+function queueLog(r){try{const q=JSON.parse(localStorage.getItem('logQueue')||'[]');q.push(r);localStorage.setItem('logQueue',JSON.stringify(q.slice(-200)))}catch(e){}}
+let _flushing=false;
+async function flushLogs(){
+  if(_flushing||!S.url) return;
+  let q=[]; try{q=JSON.parse(localStorage.getItem('logQueue')||'[]')}catch(e){}
+  if(!q.length) return;
+  _flushing=true;
+  try{
+    const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({action:'log',rows:q})})).json();
+    if(j.status==='ok'){
+      const sent=new Set(q.map(x=>x.id)), now=JSON.parse(localStorage.getItem('logQueue')||'[]');
+      localStorage.setItem('logQueue',JSON.stringify(now.filter(x=>!sent.has(x.id))));
+    }
+  }catch(e){}
+  _flushing=false;
+}
+async function logEvent(status,user){
+  if(!S.url) return;
+  try{const ip=await getIpInfo(); queueLog(buildLogRow(status,user,ip)); flushLogs();}catch(e){}
+}
+function logEventSync(status,user){   // dipakai saat logout: pakai IP yang sudah tersimpan di sesi
+  if(!S.url) return;
+  try{queueLog(buildLogRow(status,user,cachedIp()));flushLogs();}catch(e){}
+}
+
+let LOGS=[],LOGS_ST='idle',LF={user:'',status:'',hari:'30'};
+async function loadLogs(){
+  if(!S.url){LOGS_ST='nourl';statRender();return}
+  try{
+    const r=await (await fetch(S.url+'?sheet=LogLogin&limit=2000')).json();
+    LOGS=Array.isArray(r.LogLogin)?r.LogLogin:[]; LOGS_ST='ok';
+  }catch(e){LOGS_ST='err'}
+  statRender();
+}
+function statRender(){ if(cur==='stat'&&window.CURRENT) document.getElementById('view').innerHTML=P.stat(); }
+function statData(){
+  let q=[]; try{q=JSON.parse(localStorage.getItem('logQueue')||'[]')}catch(e){}
+  const ids=new Set(LOGS.map(x=>String(x.id)));
+  const all=LOGS.concat(q.filter(x=>!ids.has(String(x.id)))).map(x=>Object.assign({},x,{t:new Date(x.waktu).getTime()||0})).sort((a,b)=>a.t-b.t);
+  const seen={};   // tandai lokasi baru untuk pengguna yang sudah pernah login
+  all.forEach(x=>{
+    if(x.status!=='berhasil') return;
+    const loc=(x.kota||'')+'|'+(x.negara||''), u=String(x.username).toLowerCase();
+    seen[u]=seen[u]||{n:0,l:{}};
+    x.baru=seen[u].n>0 && !!(x.kota||x.negara) && !seen[u].l[loc];
+    seen[u].n++; seen[u].l[loc]=1;
+  });
+  return all;
+}
+const fmtWaktu=t=>t?new Date(t).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'-';
+const lokasiTxt=x=>[x.kota,x.wilayah,x.negara].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(', ')||'-';
+function statExport(){
+  const rows=statData().slice().reverse();
+  const cols=['waktu','username','nama','role','status','ip','kota','wilayah','negara','lat','lon','isp','perangkat'];
+  const esc=v=>{v=String(v==null?'':v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
+  const csv=cols.join(',')+'\n'+rows.map(r=>cols.map(c=>esc(r[c])).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download='log-login-'+today()+'.csv';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+}
+P.stat=()=>{
+  if(!window.CURRENT||window.CURRENT.role!=='pemilik') return '<div class="card">Hanya pemilik yang dapat melihat halaman ini.</div>';
+  if(LOGS_ST==='idle'){LOGS_ST='loading';loadLogs()}
+  const head='<div class="row" style="align-items:center;margin-bottom:12px"><div style="flex:1;color:var(--muted);font-size:12px">Waktu login, alamat IP, dan perkiraan lokasi (berdasarkan IP) tiap pengguna.</div><button class="btn o" style="flex:none" onclick="LOGS_ST=\'idle\';statRender()">↻ Muat ulang</button><button class="btn o" style="flex:none" onclick="statExport()">Unduh CSV</button></div>';
+  if(LOGS_ST==='loading') return head+'<div class="card" style="color:var(--muted)">Memuat data login...</div>';
+  if(LOGS_ST==='nourl') return head+'<div class="card">URL spreadsheet belum diatur, log login tidak tersimpan.</div>';
+  const warn=LOGS_ST==='err'?'<div class="card" style="border-color:#e8b4b8;background:#fff5f5">Gagal mengambil data dari spreadsheet. Menampilkan catatan yang belum terkirim saja.</div>':'';
+  const all=statData(), now=Date.now(), DAY=864e5, sod=new Date().setHours(0,0,0,0);
+  const ok=all.filter(x=>x.status==='berhasil');
+  const today_=ok.filter(x=>x.t>=sod), w7=all.filter(x=>x.t>=now-7*DAY);
+  const aktif7=new Set(w7.filter(x=>x.status==='berhasil').map(x=>String(x.username).toLowerCase())).size;
+  const gagal7=w7.filter(x=>x.status==='gagal').length, last=ok[ok.length-1];
+  const card=(a,b,c)=>'<div class="stat"><div class="stat-top">'+a+'</div><strong>'+b+'</strong>'+(c?'<div style="font-size:11px;color:var(--muted);margin-top:4px">'+c+'</div>':'')+'</div>';
+  const stats='<div class="stats">'+card('Login Hari Ini',today_.length)+card('Pengguna Aktif (7 hari)',aktif7)+card('Login Gagal (7 hari)',gagal7)+card('Login Terakhir',last?E(last.nama||last.username):'-',last?E(fmtWaktu(last.t)):'')+'</div>';
+  // grafik 14 hari
+  const days=[]; for(let i=13;i>=0;i--){const d=new Date(sod-i*DAY);days.push({d:d,n:0})}
+  ok.forEach(x=>{const k=Math.floor((new Date(x.t).setHours(0,0,0,0)-days[0].d.getTime())/DAY+.5);if(k>=0&&k<14)days[k].n++});
+  const mx=Math.max(1,...days.map(x=>x.n));
+  const chart='<div class="card"><h3>Login per Hari (14 hari)</h3><div style="display:flex;gap:6px;align-items:flex-end;height:110px;margin-top:10px">'+days.map(x=>'<div style="flex:1;text-align:center;font-size:10px;color:var(--muted)"><div style="font-size:11px;color:var(--navy);font-weight:700;min-height:14px">'+(x.n||'')+'</div><div style="height:'+Math.round(x.n/mx*70)+'px;min-height:2px;background:var(--navy);border-radius:4px 4px 0 0"></div>'+String(x.d.getDate()).padStart(2,'0')+'/'+String(x.d.getMonth()+1).padStart(2,'0')+'</div>').join('')+'</div></div>';
+  // per pengguna
+  const perUser=USERS.map(u=>{
+    const mine=all.filter(x=>String(x.username).toLowerCase()===String(u.username).toLowerCase());
+    const m_ok=mine.filter(x=>x.status==='berhasil'), l=m_ok[m_ok.length-1];
+    return '<tr><td><b>'+E(u.nama||u.username)+'</b><br><span style="color:var(--muted);font-size:11px">'+E(u.username)+' · '+E(u.role)+'</span><td>'+m_ok.length+'<td>'+mine.filter(x=>x.status==='gagal').length+'<td>'+(l?E(fmtWaktu(l.t)):'<span style="color:var(--muted)">Belum pernah login</span>')+'<td>'+(l?E(l.ip||'-'):'-')+'<td>'+(l?E(lokasiTxt(l)):'-')+'<td>'+(l?E(l.perangkat||'-'):'-')+'</tr>';
+  }).join('');
+  const users='<div class="card"><h3>Aktivitas per Pengguna</h3><div class="table-wrap"><table><tr><th>Pengguna<th>Login<th>Gagal<th>Terakhir login<th>IP terakhir<th>Lokasi terakhir<th>Perangkat</tr>'+perUser+'</table></div></div>';
+  // riwayat dengan filter
+  const names=[...new Set(all.map(x=>String(x.username)).filter(Boolean))].sort();
+  const cut=LF.hari==='all'?0:now-(+LF.hari)*DAY;
+  const list=all.filter(x=>x.t>=cut&&(!LF.user||String(x.username)===LF.user)&&(!LF.status||x.status===LF.status)).reverse();
+  const stBadge=s=>s==='berhasil'?'<span style="color:#1a7f37;font-weight:700">Berhasil</span>':s==='gagal'?'<span style="color:#c1121f;font-weight:700">Gagal</span>':'<span style="color:var(--muted)">Logout</span>';
+  const rows=list.slice(0,150).map(x=>'<tr><td>'+E(fmtWaktu(x.t))+'<td>'+E(x.nama||x.username||'-')+'<br><span style="color:var(--muted);font-size:11px">'+E(x.username||'')+(x.role?' · '+E(x.role):'')+'</span><td>'+stBadge(x.status)+'<td>'+E(x.ip||'-')+'<td>'+E(lokasiTxt(x))+(x.baru?' <span style="background:#fff0c2;color:#7a5200;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:700">lokasi baru</span>':'')+'<td>'+E(x.perangkat||'-')+'</tr>').join('')||'<tr><td colspan="6" style="color:var(--muted)">Tidak ada data.</td></tr>';
+  const sel=(k,opts)=>'<select onchange="LF.'+k+'=this.value;statRender()">'+opts.map(o=>'<option value="'+E(o[0])+'" '+(LF[k]===o[0]?'selected':'')+'>'+E(o[1])+'</option>').join('')+'</select>';
+  const hist='<div class="card"><h3>Riwayat Login</h3><div class="row">'+sel('user',[['','Semua pengguna']].concat(names.map(n=>[n,n])))+sel('status',[['','Semua status'],['berhasil','Berhasil'],['gagal','Gagal'],['logout','Logout']])+sel('hari',[['7','7 hari terakhir'],['30','30 hari terakhir'],['90','90 hari terakhir'],['all','Semua']])+'</div><div class="table-wrap"><table><tr><th>Waktu<th>Pengguna<th>Status<th>IP<th>Lokasi (perkiraan)<th>Perangkat</tr>'+rows+'</table></div>'+(list.length>150?'<p style="color:var(--muted);font-size:12px;margin-top:8px">Menampilkan 150 dari '+list.length+' catatan. Gunakan Unduh CSV untuk data lengkap.</p>':'')+'</div>';
+  return head+warn+stats+chart+users+hist;
+};
+
 // ===== Backup & Restore =====
 const daysSinceBackup=()=>{const t=localStorage.getItem('lastBackup');return t?Math.floor((Date.now()-new Date(t))/864e5):null};
 function markBackup(){try{localStorage.setItem('lastBackup',new Date().toISOString())}catch(e){}}
@@ -1049,6 +1179,7 @@ const backupBanner=()=>{
 {const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+pemilikCard()+backupCard();P.dash=()=>backupBanner()+_dash0();}
 
 // Init
+if(S.url) flushLogs();
 if(S.url){ fetch(S.url+'?sheet=Pengaturan').then(r=>r.json()).then(r=>{ if(Array.isArray(r.Pengaturan)&&r.Pengaturan.length&&!isDirty('Pengaturan')){applySettings(r.Pengaturan);if(cur==='set'&&window.CURRENT)go('set')} }).catch(()=>{}); }
 document.getElementById('todayChip').textContent='◷ '+new Date().toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
 if(window.CURRENT){
