@@ -429,6 +429,7 @@ function applySettings(r){
   S.slogan=String(x.slogan||'');
   S.logo=String(x.logo||'');
   try{const kt=JSON.parse(x.kategori||'[]');if(Array.isArray(kt))S.kategoriTambahan=kt}catch(e){}
+  if('favicon' in x) S.favicon=String(x.favicon||'');
   if('pemilik_nama' in x) S.pemilik={nama:String(x.pemilik_nama||''),jabatan:String(x.pemilik_jabatan||''),telp:String(x.pemilik_telp||''),email:String(x.pemilik_email||''),alamat:String(x.pemilik_alamat||'')};
   try{const sj=JSON.parse(x.surat||'{}');if(sj&&typeof sj==='object'&&Object.keys(sj).length)S.surat=sj}catch(e){}
   saveS();
@@ -445,7 +446,7 @@ async function syncSettings(silent){
     S.logo=small; saveS();
   }
   try{
-    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[]),surat:JSON.stringify(S.surat||{}),pemilik_nama:(S.pemilik||{}).nama||'',pemilik_jabatan:(S.pemilik||{}).jabatan||'',pemilik_telp:(S.pemilik||{}).telp||'',pemilik_email:(S.pemilik||{}).email||'',pemilik_alamat:(S.pemilik||{}).alamat||''};
+    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[]),surat:JSON.stringify(S.surat||{}),favicon:S.favicon||'',pemilik_nama:(S.pemilik||{}).nama||'',pemilik_jabatan:(S.pemilik||{}).jabatan||'',pemilik_telp:(S.pemilik||{}).telp||'',pemilik_email:(S.pemilik||{}).email||'',pemilik_alamat:(S.pemilik||{}).alamat||''};
     const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:'Pengaturan',rows:[row],force:true})})).json();
     if(j.status==='ok'){setDirty('Pengaturan',false);if(!silent)toast('Tersimpan ke Spreadsheet')}
     else if(!silent) toast('Gagal simpan profil: '+(j.message||'kesalahan server'));
@@ -493,6 +494,7 @@ function updateBrand(){
   document.getElementById('topName').innerHTML=E(window.CURRENT?.nama||S.nama||'Admin') + (window.CURRENT?' <span class="role-badge">'+E(String(window.CURRENT.role).toUpperCase())+'</span>':'');
   const av=document.getElementById('topAvatar');
   if(S.logo)av.innerHTML='<img src="'+S.logo+'">';else av.textContent=(window.CURRENT?.nama||S.nama||'A').slice(0,1).toUpperCase();
+  try{applyFavicon()}catch(e){}
 }
 
 function buildNav(){
@@ -1125,6 +1127,50 @@ P.stat=()=>{
   return head+warn+stats+chart+users+hist;
 };
 
+
+// ===== Ikon tab browser (favicon) =====
+function applyFavicon(){
+  const src=S.favicon||S.logo||'';
+  if(!src||!document.head) return;
+  let l=document.getElementById('favicon');
+  if(!l){l=document.createElement('link');l.id='favicon';l.rel='icon';document.head.appendChild(l)}
+  l.removeAttribute('type'); l.href=src;
+}
+function shrinkIcon(dataUrl,cb){
+  const img=new Image();
+  img.onload=()=>{
+    for(const size of [128,64,48]){
+      const c=document.createElement('canvas'); c.width=c.height=size;
+      const ctx=c.getContext('2d'), sc=Math.min(size/img.width,size/img.height), w=img.width*sc, h=img.height*sc;
+      ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h);
+      const out=c.toDataURL('image/png');
+      if(out.length<=45000){cb(out);return}
+    }
+    cb(null);
+  };
+  img.onerror=()=>cb(null);
+  img.src=dataUrl;
+}
+function uploadFavicon(input){
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>shrinkIcon(r.result,out=>{
+    if(!out){alert('Gambar tidak bisa diproses. Gunakan file PNG, JPG, atau ICO yang lebih sederhana.');return}
+    S.favicon=out; saveS(); syncSettings(); toast('Ikon tab diperbarui'); go('set');
+  });
+  r.readAsDataURL(f);
+}
+function resetFavicon(){ S.favicon=''; saveS(); syncSettings(); toast('Ikon tab memakai logo toko'); go('set'); }
+const faviconCard=()=>{
+  const src=S.favicon||S.logo||'';
+  const ico=src?'<img src="'+src+'" style="width:16px;height:16px;object-fit:contain">':'<span style="font-size:13px">🌐</span>';
+  return '<div class="card" style="margin-top:16px"><h3>Ikon Tab Browser</h3><p style="color:var(--muted);font-size:12px;margin:0 0 12px">Gambar kecil yang tampil di tab browser. '+(S.favicon?'Saat ini memakai ikon khusus.':'Saat ini memakai logo toko.')+' Gunakan gambar persegi dan sederhana agar terlihat jelas.</p>'+
+    '<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">'+
+    '<div style="display:flex;align-items:center;gap:8px;background:#fff7e6;border:1px solid var(--line);border-radius:10px 10px 0 0;padding:8px 14px;min-width:210px">'+ico+'<span style="font-size:13px">'+E((S.nama||'Riyadh Meubel')+' POS')+'</span><span style="margin-left:auto;font-size:12px">✕</span></div>'+
+    '<div>'+(src?'<img src="'+src+'" style="width:48px;height:48px;object-fit:contain;border:1px solid var(--line);border-radius:8px;background:#fff;padding:3px">':'')+'</div>'+
+    '<div><input type="file" accept="image/*" style="font-size:12px" onchange="uploadFavicon(this)">'+(S.favicon?'<br><button class="btn x" style="margin-top:8px" onclick="resetFavicon()">Pakai logo toko</button>':'')+'</div></div>'+
+    '<p style="color:var(--muted);font-size:11px;margin:12px 0 0">Tersimpan di spreadsheet (sheet Pengaturan), jadi sama di semua perangkat. Bila tab belum berubah, muat ulang halaman atau tekan Ctrl+Shift+R.</p></div>';
+};
 // ===== Backup & Restore =====
 const daysSinceBackup=()=>{const t=localStorage.getItem('lastBackup');return t?Math.floor((Date.now()-new Date(t))/864e5):null};
 function markBackup(){try{localStorage.setItem('lastBackup',new Date().toISOString())}catch(e){}}
@@ -1176,9 +1222,10 @@ const backupBanner=()=>{
   if(d!==null&&d<7) return '';
   return '<div class="card" style="border-color:#e8b4b8;background:#fff5f5;margin-bottom:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span><strong>⚠ '+(d===null?'Belum pernah backup.':'Sudah '+d+' hari belum backup.')+'</strong> Unduh salinan data agar aman.</span><button class="btn" onclick="downloadBackup()">Backup sekarang</button></div>';
 };
-{const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+pemilikCard()+backupCard();P.dash=()=>backupBanner()+_dash0();}
+{const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+faviconCard()+pemilikCard()+backupCard();P.dash=()=>backupBanner()+_dash0();}
 
 // Init
+try{applyFavicon()}catch(e){}
 if(S.url) flushLogs();
 if(S.url){ fetch(S.url+'?sheet=Pengaturan').then(r=>r.json()).then(r=>{ if(Array.isArray(r.Pengaturan)&&r.Pengaturan.length&&!isDirty('Pengaturan')){applySettings(r.Pengaturan);if(cur==='set'&&window.CURRENT)go('set')} }).catch(()=>{}); }
 document.getElementById('todayChip').textContent='◷ '+new Date().toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
