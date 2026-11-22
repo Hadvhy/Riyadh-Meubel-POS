@@ -398,6 +398,8 @@ async function pull(silent){
       if(r[k].length===0 && DB[k].length>0){ sync(k); return; } // sheet kosong, lokal ada isi: jangan dihapus
       DB[k]=r[k]; setDirty(k,false);
     });
+    if(Array.isArray(r.Pengaturan) && r.Pengaturan.length){ if(!(silent&&isDirty('Pengaturan'))) applySettings(r.Pengaturan); }
+    else syncSettings(true);   // sheet Pengaturan belum ada/kosong: isi dari profil di perangkat ini
     normDB(); saveDB();
     if(Array.isArray(r.Users) && r.Users.length && !(silent && isDirty('Users'))){
       USERS=r.Users.map(normUser); saveUsers(); localStorage.setItem('usersSynced','1');
@@ -407,13 +409,58 @@ async function pull(silent){
   }catch(e){ if(!silent) toast('Gagal mengambil data'); }
 }
 const normUser=u=>({...u,id:String(u.id),username:String(u.username),password:String(u.password),nama:String(u.nama||u.username),role:String(u.role||'kasir')});
+
+// ===== Profil toko <-> Spreadsheet (sheet "Pengaturan") =====
+function applySettings(r){
+  if(!Array.isArray(r)||!r.length) return false;
+  const x=r[0];
+  S.nama=String(x.nama||'')||S.nama||'Riyadh Meubel';
+  S.alamat=String(x.alamat||'');
+  S.telp=String(x.telp||'');
+  S.slogan=String(x.slogan||'');
+  S.logo=String(x.logo||'');
+  try{const kt=JSON.parse(x.kategori||'[]');if(Array.isArray(kt))S.kategoriTambahan=kt}catch(e){}
+  saveS();
+  return true;
+}
+async function syncSettings(silent){
+  saveS();
+  if(!S.url) return;
+  setDirty('Pengaturan',true);
+  try{
+    const row={nama:S.nama||'',alamat:S.alamat||'',telp:S.telp||'',slogan:S.slogan||'',logo:S.logo||'',kategori:JSON.stringify(S.kategoriTambahan||[])};
+    const j=await (await fetch(S.url,{method:'POST',body:JSON.stringify({sheet:'Pengaturan',rows:[row],force:true})})).json();
+    if(j.status==='ok'){setDirty('Pengaturan',false);if(!silent)toast('Profil toko tersimpan ke Spreadsheet')}
+    else if(!silent) toast('Gagal simpan profil: '+(j.message||'kesalahan server'));
+  }catch(e){ if(!silent) toast('Gagal sinkron profil, tersimpan di perangkat'); }
+}
+function shrinkLogo(dataUrl,cb){
+  const img=new Image();
+  img.onload=()=>{
+    const tries=[[256,'image/png'],[200,'image/png'],[256,'image/jpeg',.85],[200,'image/jpeg',.7],[128,'image/jpeg',.7]];
+    for(const [m,type,q] of tries){
+      const sc=Math.min(1,m/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.max(1,Math.round(img.width*sc));c.height=Math.max(1,Math.round(img.height*sc));
+      const ctx=c.getContext('2d');
+      if(type==='image/jpeg'){ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height)}
+      ctx.drawImage(img,0,0,c.width,c.height);
+      const out=c.toDataURL(type,q);
+      if(out.length<=45000){cb(out);return}   // batas sel Google Sheets 50.000 karakter
+    }
+    cb(null);
+  };
+  img.onerror=()=>cb(null);
+  img.src=dataUrl;
+}
 async function refreshUsers(){
   if(!S.url) return false;
-  if(isDirty('Users')) return false;
   try{
     const c=new AbortController(), t=setTimeout(()=>c.abort(),8000);
-    const r=await (await fetch(S.url+'?sheet=Users',{signal:c.signal})).json();
+    const r=await (await fetch(S.url+'?sheet=Users,Pengaturan',{signal:c.signal})).json();
     clearTimeout(t);
+    if(Array.isArray(r.Pengaturan) && !isDirty('Pengaturan')) applySettings(r.Pengaturan);
+    if(isDirty('Users')) return false;
     if(Array.isArray(r.Users) && r.Users.length){
       USERS=r.Users.map(normUser); saveUsers(); localStorage.setItem('usersSynced','1'); return true;
     }
@@ -523,7 +570,7 @@ P.stok=()=>{
   const cats=getAllKategori();
   return '<div class="card"><h3>Tambah Produk</h3><div class="row"><input id="pk" placeholder="Kode"><input id="pn" placeholder="Nama produk"><input id="pc" list="katList" placeholder="Kategori (pilih atau ketik baru)"></div><datalist id="katList">'+cats.map(c=>'<option value="'+E(c)+'">').join('')+'</datalist><div class="row"><input id="pb" type="number" placeholder="Harga beli"><input id="pj" type="number" placeholder="Harga jual"><input id="ps" type="number" placeholder="Stok awal"><input id="pm" type="number" placeholder="Stok minimum"></div><button class="btn" onclick="addProduk()">Simpan Produk</button></div><div class="card"><div class="table-wrap"><table><tr><th>Kode<th>Nama<th>Kategori<th>Beli<th>Jual<th>Stok<th></tr>'+DB.Produk.map(p=>'<tr><td>'+E(p.kode)+'<td>'+E(p.nama)+'<td>'+E(p.kategori)+'<td>'+R(p.harga_beli)+'<td>'+R(p.harga_jual)+'<td style="'+(p.stok<=p.min?'color:var(--red);font-weight:600':'')+'">'+p.stok+'<td><button class="btn o" onclick="opname(\''+p.id+'\')">Opname</button> <button class="btn o" onclick="editP(\''+p.id+'\')">Ubah</button> <button class="btn x" onclick="delP(\''+p.id+'\')">Hapus</button></tr>').join('')||'<tr><td colspan="7" style="color:var(--muted)">Belum ada produk.</td></tr>'+'</table></div></div>';
 };
-function addProduk(){const g=i=>document.getElementById(i).value.trim();if(!g('pn'))return alert('Nama wajib');const kat=g('pc');if(kat && !getAllKategori().includes(kat)){S.kategoriTambahan=S.kategoriTambahan||[];if(!S.kategoriTambahan.includes(kat)){S.kategoriTambahan.push(kat);saveS()}}DB.Produk.push({id:uid(),kode:g('pk'),nama:g('pn'),kategori:kat,harga_beli:+g('pb')||0,harga_jual:+g('pj')||0,stok:+g('ps')||0,min:+g('pm')||0});sync('Produk');go('stok')}
+function addProduk(){const g=i=>document.getElementById(i).value.trim();if(!g('pn'))return alert('Nama wajib');const kat=g('pc');if(kat && !getAllKategori().includes(kat)){S.kategoriTambahan=S.kategoriTambahan||[];if(!S.kategoriTambahan.includes(kat)){S.kategoriTambahan.push(kat);saveS();syncSettings(true)}}DB.Produk.push({id:uid(),kode:g('pk'),nama:g('pn'),kategori:kat,harga_beli:+g('pb')||0,harga_jual:+g('pj')||0,stok:+g('ps')||0,min:+g('pm')||0});sync('Produk');go('stok')}
 function opname(id){const p=DB.Produk.find(x=>x.id===id);const v=prompt('Stok fisik "'+p.nama+'" (tercatat '+p.stok+'):',p.stok);if(v==null||v==='')return;p.stok=+v;sync('Produk');go('stok')}
 function editP(id){const p=DB.Produk.find(x=>x.id===id);const n=prompt('Nama',p.nama),j=prompt('Harga jual',p.harga_jual),b=prompt('Harga beli',p.harga_beli);if(n)p.nama=n;if(j)p.harga_jual=+j;if(b)p.harga_beli=+b;sync('Produk');go('stok')}
 function delP(id){if(confirm('Hapus produk ini?')){DB.Produk=DB.Produk.filter(x=>x.id!==id);sync('Produk');go('stok')}}
@@ -546,9 +593,9 @@ P.lap=()=>{
 };
 function reprint(id){lastReceipt=DB.Penjualan.find(x=>x.id===id);if(lastReceipt)printReceipt()}
 
-P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button></div></div>';
-function uploadLogo(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{S.logo=r.result;saveS();go('set');toast('Logo diunggah')};r.readAsDataURL(f)}
-function simpanSet(){S.nama=document.getElementById('sn').value.trim()||'Riyadh Meubel';S.alamat=document.getElementById('sa').value.trim();S.telp=document.getElementById('st').value.trim();S.slogan=document.getElementById('ss').value.trim();S.url=CFG.SCRIPT_URL||S.url||'';saveS();toast('Pengaturan tersimpan');if(S.url)pull()}
+P.set=()=>'<div class="card"><h3>Profil Toko</h3><div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap"><div><label style="font-size:10px;color:var(--muted)">LOGO TOKO</label><div class="logo-preview" id="logoPrev">'+(S.logo?'<img src="'+S.logo+'">':'<span style="color:var(--muted);font-size:12px">Belum ada logo</span>')+'</div><input type="file" accept="image/*" style="margin-top:8px;font-size:12px" onchange="uploadLogo(this)">'+(S.logo?'<button class="btn x" style="margin-top:6px" onclick="S.logo=\'\';saveS();syncSettings();go(\'set\')">Hapus Logo</button>':'')+'</div><div style="flex:1;min-width:250px"><div class="row"><input id="sn" placeholder="Nama toko" value="'+E(S.nama)+'"></div><div class="row"><input id="sa" placeholder="Alamat" value="'+E(S.alamat)+'"></div><div class="row"><input id="st" placeholder="Telepon / WhatsApp" value="'+E(S.telp||'')+'"></div><div class="row"><input id="ss" placeholder="Slogan / tagline" value="'+E(S.slogan||'')+'"></div></div></div><div class="row" style="margin-top:12px"><button class="btn" onclick="simpanSet()">Simpan Pengaturan</button></div></div>';
+function uploadLogo(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{shrinkLogo(r.result,out=>{if(!out){alert('Logo tidak bisa diproses atau terlalu kompleks. Gunakan gambar yang lebih sederhana.');return}S.logo=out;saveS();syncSettings();go('set');toast('Logo diunggah')})};r.readAsDataURL(f)}
+function simpanSet(){S.nama=document.getElementById('sn').value.trim()||'Riyadh Meubel';S.alamat=document.getElementById('sa').value.trim();S.telp=document.getElementById('st').value.trim();S.slogan=document.getElementById('ss').value.trim();S.url=CFG.SCRIPT_URL||S.url||'';saveS();toast('Pengaturan tersimpan');if(S.url)syncSettings()}
 
 P.users=()=>{
   return '<div class="card"><h3>Tambah Pengguna</h3><div class="row"><input id="uu" placeholder="Username"><input id="up" type="password" placeholder="Password"><input id="un" placeholder="Nama"><select id="ur"><option value="kasir">Kasir</option><option value="gudang">Gudang</option><option value="pemilik">Pemilik</option></select></div><button class="btn" onclick="addUser()">Tambah Pengguna</button></div>'+
@@ -611,6 +658,7 @@ async function doLogin(){
   if(S.url){
     if(state==='empty') syncUsers();                       // sheet Users masih kosong: isi dengan akun ini
     Object.keys(DB).filter(isDirty).forEach(k=>sync(k));   // kirim dulu perubahan yang tertunda
+    if(isDirty('Pengaturan')) syncSettings(true);
     pull(true);                                            // lalu ambil data terbaru
   }
 }
@@ -716,6 +764,7 @@ function restoreBackup(input){
       try{localStorage.setItem('db_prev',JSON.stringify(DB))}catch(e){}
       DB=d.DB;normDB();saveDB();
       if(Array.isArray(d.Users)&&d.Users.length){USERS=d.Users.map(normUser);saveUsers()}
+      if(d.Settings&&typeof d.Settings==='object'){const u=S.url;S=Object.assign({},S,d.Settings,{url:u});saveS();if(S.url)syncSettings(true)}
       if(S.url){['Produk','Penjualan','Pembelian','Pengeluaran','Pelanggan','Supplier'].forEach(k=>sync(k,true));syncUsers(true)}
       toast('Backup dipulihkan');go('set');
     }catch(e){alert('File backup tidak valid')}
@@ -747,6 +796,7 @@ const backupBanner=()=>{
 {const _set0=P.set,_dash0=P.dash;P.set=()=>_set0()+backupCard();P.dash=()=>backupBanner()+_dash0();}
 
 // Init
+if(S.url){ fetch(S.url+'?sheet=Pengaturan').then(r=>r.json()).then(r=>{ if(Array.isArray(r.Pengaturan)&&r.Pengaturan.length&&!isDirty('Pengaturan')){applySettings(r.Pengaturan);if(cur==='set'&&window.CURRENT)go('set')} }).catch(()=>{}); }
 document.getElementById('todayChip').textContent='◷ '+new Date().toLocaleDateString('id-ID',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
 if(window.CURRENT){
   document.getElementById('loginScreen').style.display='none';
